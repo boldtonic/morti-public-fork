@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { getGrainShaderProfile, getGrainTexture } from '~~/shared/three/grain-textures'
-import { dominantBoardAxis } from '~~/shared/three/materials'
+import { dominantBoardAxis, grainOffsetForKey } from '~~/shared/three/materials'
 
 describe('board-aware material grain', () => {
   it('follows the longest local panel dimension', () => {
@@ -12,6 +12,13 @@ describe('board-aware material grain', () => {
 
   it('uses a stable x-axis tie break for square fronts', () => {
     expect(dominantBoardAxis([0.45, 0.45, 0.018])).toBe('x')
+  })
+
+  it('uses stable, distinct pattern offsets for different panels', () => {
+    const first = grainOffsetForKey('drawer-front:module:0')
+    expect(grainOffsetForKey('drawer-front:module:0')).toEqual(first)
+    expect(grainOffsetForKey('drawer-front:module:1')).not.toEqual(first)
+    expect(first.every(value => value >= 0 && value < 1)).toBe(true)
   })
 
   it('keeps grain profiles on wood and leaves lacquer flat', () => {

@@ -29,6 +29,8 @@ export interface PanelMaterialSpec {
   grainScale?: number
   /** Local panel dimensions [width, height, thickness], in meters. */
   boardSize?: readonly [number, number, number]
+  /** Stable per-panel texture offset, in texture repeats. */
+  grainOffset?: readonly [number, number]
 }
 
 export type BoardAxis = 'x' | 'y' | 'z'
@@ -39,6 +41,20 @@ export function dominantBoardAxis(size: readonly [number, number, number]): Boar
   if (x >= y && x >= z) return 'x'
   if (y >= z) return 'y'
   return 'z'
+}
+
+/** Prevent identical panels from starting at the same point in the pattern. */
+export function grainOffsetForKey(key: string): readonly [number, number] {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  const unsigned = hash >>> 0
+  return [
+    (unsigned & 0xffff) / 0x10000,
+    ((unsigned >>> 16) & 0xffff) / 0x10000,
+  ]
 }
 
 function boardAxisVector(size: readonly [number, number, number]): THREE.Vector3 {
@@ -72,6 +88,7 @@ export function makePanelMaterial(
         grainTex,
         spec.grainScale ?? 5,
         spec.boardSize ?? [1, 1, 0.018],
+        spec.grainOffset ?? [0, 0],
         profile?.detail ?? 0.16,
         profile?.endContrast ?? 0.16,
       )
@@ -185,6 +202,7 @@ function attachBoardGrain(
   grainTex: THREE.DataTexture,
   tilesPerMeter: number,
   boardSize: readonly [number, number, number],
+  grainOffset: readonly [number, number],
   detailStrength: number,
   endContrast: number,
 ): void {
@@ -197,6 +215,7 @@ function attachBoardGrain(
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uGrainScale = { value: tilesPerMeter }
     shader.uniforms.uGrainAxis = { value: boardAxisVector(boardSize) }
+    shader.uniforms.uGrainOffset = { value: new THREE.Vector2(...grainOffset) }
     shader.uniforms.uGrainDetail = { value: detailStrength }
     shader.uniforms.uEndGrainContrast = { value: endContrast }
 
@@ -223,6 +242,7 @@ varying vec3 vBoardPos_grain;
 varying vec3 vBoardNormal_grain;
 uniform float uGrainScale;
 uniform vec3 uGrainAxis;
+uniform vec2 uGrainOffset;
 uniform float uGrainDetail;
 uniform float uEndGrainContrast;
 
@@ -253,7 +273,7 @@ acrossAxis = normalize(acrossAxis);
 vec2 faceUv = vec2(
   dot(vBoardPos_grain, uGrainAxis),
   dot(vBoardPos_grain, acrossAxis)
-) * uGrainScale;
+) * uGrainScale + uGrainOffset;
 
 // CPU textures encode neutral brightness as 200/255. Decode it back to 1.0.
 float broadGrain = texture2D(map, faceUv).r * 1.275;
@@ -262,20 +282,26 @@ float faceGrain = 1.0
   + (broadGrain - 1.0) * 0.58
   + (fineGrain - 1.0) * uGrainDetail * 0.55;
 
-// End caps expose growth rings instead of longitudinal face grain.
-vec3 helperAxis = abs(uGrainAxis.x) < 0.5
-  ? vec3(1.0, 0.0, 0.0)
-  : vec3(0.0, 1.0, 0.0);
-vec3 endU = normalize(cross(uGrainAxis, helperAxis));
-vec3 endV = normalize(cross(uGrainAxis, endU));
-vec2 endUv = vec2(dot(vBoardPos_grain, endU), dot(vBoardPos_grain, endV)) * uGrainScale;
-float ringWarp = (grainNoise(endUv * 1.7 + 4.2) - 0.5) * 0.32;
-float ringSignal = sin((length(endUv * vec2(1.0, 1.45)) + ringWarp) * 18.0);
-float endDetail = grainNoise(endUv * 9.0 + 11.3) - 0.5;
-float endGrain = 1.0 - ringSignal * uEndGrainContrast * 0.5 - endDetail * uEndGrainContrast * 0.3;
-
 float endWeight = pow(abs(dot(boardNormal, uGrainAxis)), 8.0);
-float grainValue = clamp(mix(faceGrain, endGrain, endWeight), 0.72, 1.16);
+float grainValue = faceGrain;
+if (endWeight > 0.01) {
+  // End caps expose growth rings instead of longitudinal face grain.
+  vec3 helperAxis = abs(uGrainAxis.x) < 0.5
+    ? vec3(1.0, 0.0, 0.0)
+    : vec3(0.0, 1.0, 0.0);
+  vec3 endU = normalize(cross(uGrainAxis, helperAxis));
+  vec3 endV = normalize(cross(uGrainAxis, endU));
+  vec2 endUv = vec2(dot(vBoardPos_grain, endU), dot(vBoardPos_grain, endV))
+    * uGrainScale + uGrainOffset;
+  float ringWarp = (grainNoise(endUv * 1.7 + 4.2) - 0.5) * 0.32;
+  float ringSignal = sin((length(endUv * vec2(1.0, 1.45)) + ringWarp) * 18.0);
+  float endDetail = grainNoise(endUv * 9.0 + 11.3) - 0.5;
+  float endGrain = 1.0
+    - ringSignal * uEndGrainContrast * 0.5
+    - endDetail * uEndGrainContrast * 0.3;
+  grainValue = mix(faceGrain, endGrain, endWeight);
+}
+grainValue = clamp(grainValue, 0.72, 1.16);
 diffuseColor.rgb *= grainValue;`,
       )
       .replace(

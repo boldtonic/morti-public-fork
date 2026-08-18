@@ -110,6 +110,7 @@ Current status of material rendering:
 - Lacquers and custom flat colors remain grain-free.
 - The previous grain texture encoding darkened every wood preset below its specified base color; rendering now decodes neutral grain back to the selected material color.
 - A small per-species profile controls secondary face detail and end-grain contrast without creating extra UI or persisted project state.
+- Each panel receives a deterministic texture offset from its stable panel key, preventing repeated drawer and door fronts while keeping renders reproducible.
 
 ## Current Suggested Roadmap
 

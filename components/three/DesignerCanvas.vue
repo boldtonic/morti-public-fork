@@ -14,7 +14,7 @@ import {
   bakeSurfaceIdsForScene,
   SurfaceIdPalette,
 } from '~~/shared/three/outline'
-import { makePanelMaterial, type PanelMaterialMode, type PanelMaterialSpec } from '~~/shared/three/materials'
+import { grainOffsetForKey, makePanelMaterial, type PanelMaterialMode, type PanelMaterialSpec } from '~~/shared/three/materials'
 import { DEFAULT_CAMERA_STATE, hexColorToNumber, normalizePublicStyle } from '~~/shared/domain/defaults'
 import { resolveMaterial, type CabinetPart } from '~~/shared/domain/materials'
 import { HANDLE_FINISH_SPECS, isKnobHandleType, isSquareHandleType, moduleShowsPhysicalHandle } from '~~/shared/domain/handles'
@@ -611,6 +611,7 @@ function panelMaterialSpec(panel: CompiledPanel): PanelMaterialSpec {
     metalness: resolved.metalness,
     grain: resolved.grain,
     boardSize: [panel.width, panel.height, panel.thickness],
+    grainOffset: grainOffsetForKey(panel.key),
   }
 }
 
