@@ -838,10 +838,10 @@ const canvasChromeTeleportSelector = computed(() =>
       <!-- Top-left chrome: project menu + name + view-mode pill -->
       <div
         v-if="project"
-        class="project-top-chrome pointer-events-none fixed inset-x-3 top-3 z-30 flex flex-wrap items-start gap-2 md:inset-x-auto md:left-4 md:top-4 md:flex-nowrap md:justify-between md:gap-2.5"
+        class="project-top-chrome pointer-events-none fixed inset-x-3 top-3 z-30 flex flex-wrap items-start gap-2 md:inset-x-auto md:left-4 md:top-4 md:flex-nowrap md:gap-2.5"
         :style="{ '--project-top-chrome-width': topChromeWidth }"
       >
-        <div class="pointer-events-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-2 shadow-sm sm:gap-2.5 sm:px-3 md:max-w-[min(20rem,calc(100vw-6rem))]">
+        <div class="project-title-pill pointer-events-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-2 shadow-sm sm:gap-2.5 sm:px-3">
           <UButton
             to="/"
             variant="ghost"
@@ -1105,8 +1105,15 @@ const canvasChromeTeleportSelector = computed(() =>
   }
 
   .project-top-chrome > :first-child {
-    flex: 1 1 auto;
-    max-width: none;
+    flex: 0 1 auto;
+    width: fit-content;
+    max-width: min(20rem, calc(var(--project-top-chrome-width) - 10.75rem));
+  }
+
+  .project-title-row {
+    container-type: normal;
+    flex: 0 1 auto;
+    width: max-content;
   }
 
   .public-badge-label {
