@@ -1100,14 +1100,24 @@ const canvasChromeTeleportSelector = computed(() =>
 
 @media (min-width: 768px) {
   .project-top-chrome {
+    display: grid;
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(0, 1fr);
+    align-items: start;
     width: var(--project-top-chrome-width);
     max-width: var(--project-top-chrome-width);
   }
 
-  .project-top-chrome > :first-child {
+  .project-title-pill {
+    grid-column: 1;
+    justify-self: start;
     flex: 0 1 auto;
     width: fit-content;
     max-width: min(20rem, calc(var(--project-top-chrome-width) - 10.75rem));
+  }
+
+  .project-view-tabs {
+    grid-column: 2;
+    justify-self: center;
   }
 
   .project-title-row {
