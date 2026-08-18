@@ -47,7 +47,11 @@ const DESIGNER_WHEEL_ZOOM_SENSITIVITY = 0.0011
 const GRID_FADE_OUT_SECONDS = 0.14
 const GRID_FADE_IN_SECONDS = 0.35
 const GRID_VISIBILITY_EPSILON = 0.01
-const FLOOR_SHADOW_OPACITY = 0.28
+const FLOOR_SHADOW_OPACITY = 0.2
+const STUDIO_AMBIENT_INTENSITY = 0.35
+const STUDIO_KEY_INTENSITY = 1.55
+const STUDIO_HEMISPHERE_INTENSITY = 0.75
+const STUDIO_FILL_INTENSITY = 0.55
 const POSITION_SETTLE_EPSILON_SQ = 1e-8
 const ROTATION_SETTLE_EPSILON = 1e-5
 const TECHNICAL_OVERLAY_OFFSET = 6e-4
@@ -359,10 +363,12 @@ keyLight.castShadow = false
 scene.add(keyLight)
 scene.add(keyLight.target)
 
-const hemisphereGroup = new THREE.Group()
-// Soft neutral bounce keeps downward-facing panel surfaces legible without
-// flattening the key-light modelling or tinting the selected material.
-hemisphereGroup.add(new THREE.HemisphereLight(0xffffff, 0xc9c5be, 1.1))
+const studioFillGroup = new THREE.Group()
+studioFillGroup.add(new THREE.HemisphereLight(0xffffff, 0xd3cfc8, STUDIO_HEMISPHERE_INTENSITY))
+const fillLight = new THREE.DirectionalLight(0xffffff, STUDIO_FILL_INTENSITY)
+fillLight.position.set(-3, -2, 4)
+fillLight.target.position.set(0, 0, 0)
+studioFillGroup.add(fillLight, fillLight.target)
 
 // Skydome (always hidden per spec)
 const skydomeMat = new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.BackSide, depthWrite: false })
@@ -1537,17 +1543,17 @@ function setRawSrgbColor(color: THREE.Color, hex: number) {
 
 function applyRenderModeLighting() {
   if (props.renderMode === 'render-debug') {
-    ambient.intensity = 0.5
-    keyLight.intensity = 2
+    ambient.intensity = STUDIO_AMBIENT_INTENSITY
+    keyLight.intensity = STUDIO_KEY_INTENSITY
     keyLight.castShadow = true
-    if (!hemisphereGroup.parent) scene.add(hemisphereGroup)
+    if (!studioFillGroup.parent) scene.add(studioFillGroup)
     skydome.visible = false
   }
   else {
     ambient.intensity = 0.4
     keyLight.intensity = 1.15
     keyLight.castShadow = false
-    if (hemisphereGroup.parent) scene.remove(hemisphereGroup)
+    if (studioFillGroup.parent) scene.remove(studioFillGroup)
     floorCatcher.visible = false
     skydome.visible = false
   }
@@ -1768,12 +1774,14 @@ useThreejsCanvas({
   render(renderer, dt) {
     applyClearColor(renderer)
     renderer.shadowMap.enabled = props.renderMode === 'render-debug'
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
     tickAnimations(dt)
     tickSceneGroundOpacity(dt)
     if (!props.headlessCapture || !captureLocked.value) autoFitCamera()
     if (controls) {
       controls.update()
       keyLight.target.position.copy(controls.target)
+      fillLight.target.position.copy(controls.target)
       if (viewHelper) viewHelper.center.copy(controls.target)
     }
     if (viewHelper?.animating) viewHelper.update(dt)
