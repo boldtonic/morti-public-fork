@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { getGrainTexture } from './grain-textures'
+import { getGrainShaderProfile, getGrainTexture } from './grain-textures'
 import type { MaterialGrain } from '~~/shared/domain/materials'
 
 /**
@@ -24,9 +24,28 @@ export interface PanelMaterialSpec {
    *  pass `'lacquer-white' | 'lacquer-charcoal' | 'custom'` (or omit) to
    *  render flat, no grain. */
   grain?: MaterialGrain
-  /** World-space grain density in tiles-per-meter. Higher = tighter pattern.
+  /** Local-space grain density in tiles-per-meter. Higher = tighter pattern.
    *  Defaults to 5 (one stripe roughly every 20cm of panel face). */
   grainScale?: number
+  /** Local panel dimensions [width, height, thickness], in meters. */
+  boardSize?: readonly [number, number, number]
+}
+
+export type BoardAxis = 'x' | 'y' | 'z'
+
+/** The longest local panel dimension establishes the grain direction. */
+export function dominantBoardAxis(size: readonly [number, number, number]): BoardAxis {
+  const [x, y, z] = size
+  if (x >= y && x >= z) return 'x'
+  if (y >= z) return 'y'
+  return 'z'
+}
+
+function boardAxisVector(size: readonly [number, number, number]): THREE.Vector3 {
+  const axis = dominantBoardAxis(size)
+  if (axis === 'x') return new THREE.Vector3(1, 0, 0)
+  if (axis === 'y') return new THREE.Vector3(0, 1, 0)
+  return new THREE.Vector3(0, 0, 1)
 }
 
 export function makePanelMaterial(
@@ -44,9 +63,18 @@ export function makePanelMaterial(
       metalness: spec.metalness ?? 0.08,
       roughness: spec.roughness ?? 0.62,
     })
-    const grainTex = spec.grain ? getGrainTexture(spec.grain) : null
-    if (grainTex) {
-      attachTriplanarGrain(material, grainTex, spec.grainScale ?? 5)
+    const grain = spec.grain
+    const grainTex = grain ? getGrainTexture(grain) : null
+    if (grain && grainTex) {
+      const profile = getGrainShaderProfile(grain)
+      attachBoardGrain(
+        material,
+        grainTex,
+        spec.grainScale ?? 5,
+        spec.boardSize ?? [1, 1, 0.018],
+        profile?.detail ?? 0.16,
+        profile?.endContrast ?? 0.16,
+      )
     }
     return material
   }
@@ -142,78 +170,119 @@ export function makeBackgroundMaterial(color: number): THREE.MeshBasicMaterial {
 }
 
 /**
- * Inject world-space triplanar sampling of a grayscale grain DataTexture into
- * a MeshStandardMaterial. The texture multiplies `diffuseColor.rgb` so the
- * base color is preserved while stripes darken/lighten it. Roughness is also
- * modulated slightly so polished bands shine differently than open grain.
+ * Inject board-aware sampling of a grayscale grain DataTexture into a
+ * MeshStandardMaterial. Grain follows the panel's longest local axis, while
+ * end caps receive a restrained ring pattern. The existing PBR lighting and
+ * material finish remain in charge of the final surface response.
  *
- * Triplanar (rather than UV) because:
+ * Local projection (rather than UV) because:
  *   - BoxGeometry UVs are per-face 0..1, ignoring world units; tiling
  *     produces inconsistent grain density across panel sizes.
  *   - CSG boolean cuts (door pulls) can scramble UVs entirely.
  */
-function attachTriplanarGrain(
+function attachBoardGrain(
   material: THREE.MeshStandardMaterial,
   grainTex: THREE.DataTexture,
   tilesPerMeter: number,
+  boardSize: readonly [number, number, number],
+  detailStrength: number,
+  endContrast: number,
 ): void {
-  // Expose the texture so Three's built-in resource tracking disposes it
-  // alongside the material on cleanup. Setting `map` also lets MeshStandard's
-  // existing diffuse-map shader chunks compile in (we override their UV in
-  // the shader injection below).
+  // `map` enables MeshStandard's diffuse-map shader chunks; the shared texture
+  // itself remains owned by the module-level grain cache.
   material.map = grainTex
   material.userData.grainScale = tilesPerMeter
+  material.userData.boardSize = [...boardSize]
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uGrainScale = { value: tilesPerMeter }
+    shader.uniforms.uGrainAxis = { value: boardAxisVector(boardSize) }
+    shader.uniforms.uGrainDetail = { value: detailStrength }
+    shader.uniforms.uEndGrainContrast = { value: endContrast }
 
-    // -- VERTEX: pass world position + world normal to the fragment shader.
+    // Board-space coordinates survive panel rotation and CSG operations.
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
         `#include <common>
-varying vec3 vWorldPos_grain;
-varying vec3 vWorldNormal_grain;`,
+varying vec3 vBoardPos_grain;
+varying vec3 vBoardNormal_grain;`,
       )
       .replace(
         '#include <fog_vertex>',
         `#include <fog_vertex>
-vWorldPos_grain = (modelMatrix * vec4(transformed, 1.0)).xyz;
-vWorldNormal_grain = normalize(mat3(modelMatrix) * objectNormal);`,
+vBoardPos_grain = transformed;
+vBoardNormal_grain = normalize(objectNormal);`,
       )
 
-    // -- FRAGMENT: triplanar-sample `map` using world-space coords + the
-    // dominant face axis, then modulate diffuseColor and roughness.
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
-varying vec3 vWorldPos_grain;
-varying vec3 vWorldNormal_grain;
-uniform float uGrainScale;`,
+varying vec3 vBoardPos_grain;
+varying vec3 vBoardNormal_grain;
+uniform float uGrainScale;
+uniform vec3 uGrainAxis;
+uniform float uGrainDetail;
+uniform float uEndGrainContrast;
+
+float grainHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float grainNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(grainHash(i), grainHash(i + vec2(1.0, 0.0)), f.x),
+    mix(grainHash(i + vec2(0.0, 1.0)), grainHash(i + vec2(1.0, 1.0)), f.x),
+    f.y
+  );
+}`,
       )
       .replace(
         '#include <map_fragment>',
-        `// Triplanar sample of grain texture (overrides the standard <map_fragment>).
-vec3 blend = abs(vWorldNormal_grain);
-blend = pow(blend, vec3(4.0));
-blend /= max(blend.x + blend.y + blend.z, 1e-5);
-vec2 uvX = vWorldPos_grain.zy * uGrainScale;
-vec2 uvY = vWorldPos_grain.xz * uGrainScale;
-vec2 uvZ = vWorldPos_grain.xy * uGrainScale;
-vec3 cX = texture2D(map, uvX).rgb;
-vec3 cY = texture2D(map, uvY).rgb;
-vec3 cZ = texture2D(map, uvZ).rgb;
-vec3 grainSample = cX * blend.x + cY * blend.y + cZ * blend.z;
-// Texture is encoded so 1.0 ≈ neutral, range [0.5, 1.15]; expand back.
-float grainValue = grainSample.r;
+        `// Project broad face grain along the board's dominant local axis.
+vec3 boardNormal = normalize(vBoardNormal_grain);
+vec3 acrossAxis = cross(uGrainAxis, boardNormal);
+if (dot(acrossAxis, acrossAxis) < 1e-5) {
+  acrossAxis = abs(uGrainAxis.x) < 0.5 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+}
+acrossAxis = normalize(acrossAxis);
+vec2 faceUv = vec2(
+  dot(vBoardPos_grain, uGrainAxis),
+  dot(vBoardPos_grain, acrossAxis)
+) * uGrainScale;
+
+// CPU textures encode neutral brightness as 200/255. Decode it back to 1.0.
+float broadGrain = texture2D(map, faceUv).r * 1.275;
+float fineGrain = texture2D(map, faceUv * vec2(2.73, 3.17) + vec2(0.37, 0.61)).r * 1.275;
+float faceGrain = 1.0
+  + (broadGrain - 1.0) * 0.58
+  + (fineGrain - 1.0) * uGrainDetail * 0.55;
+
+// End caps expose growth rings instead of longitudinal face grain.
+vec3 helperAxis = abs(uGrainAxis.x) < 0.5
+  ? vec3(1.0, 0.0, 0.0)
+  : vec3(0.0, 1.0, 0.0);
+vec3 endU = normalize(cross(uGrainAxis, helperAxis));
+vec3 endV = normalize(cross(uGrainAxis, endU));
+vec2 endUv = vec2(dot(vBoardPos_grain, endU), dot(vBoardPos_grain, endV)) * uGrainScale;
+float ringWarp = (grainNoise(endUv * 1.7 + 4.2) - 0.5) * 0.32;
+float ringSignal = sin((length(endUv * vec2(1.0, 1.45)) + ringWarp) * 18.0);
+float endDetail = grainNoise(endUv * 9.0 + 11.3) - 0.5;
+float endGrain = 1.0 - ringSignal * uEndGrainContrast * 0.5 - endDetail * uEndGrainContrast * 0.3;
+
+float endWeight = pow(abs(dot(boardNormal, uGrainAxis)), 8.0);
+float grainValue = clamp(mix(faceGrain, endGrain, endWeight), 0.72, 1.16);
 diffuseColor.rgb *= grainValue;`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
 // Polished bands (high grainValue) look slightly smoother; open pores rougher.
-roughnessFactor *= mix(1.08, 0.92, clamp(grainValue, 0.0, 1.0));`,
+roughnessFactor *= clamp(1.0 - (grainValue - 1.0) * 0.35, 0.92, 1.08);`,
       )
   }
 

@@ -610,6 +610,7 @@ function panelMaterialSpec(panel: CompiledPanel): PanelMaterialSpec {
     roughness: resolved.roughness,
     metalness: resolved.metalness,
     grain: resolved.grain,
+    boardSize: [panel.width, panel.height, panel.thickness],
   }
 }
 
@@ -1774,7 +1775,7 @@ useThreejsCanvas({
   render(renderer, dt) {
     applyClearColor(renderer)
     renderer.shadowMap.enabled = props.renderMode === 'render-debug'
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.type = THREE.PCFShadowMap
     tickAnimations(dt)
     tickSceneGroundOpacity(dt)
     if (!props.headlessCapture || !captureLocked.value) autoFitCamera()

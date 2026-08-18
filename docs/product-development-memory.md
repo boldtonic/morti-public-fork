@@ -1,6 +1,6 @@
 # Product Development Memory
 
-Last updated: 2026-07-15
+Last updated: 2026-08-18
 
 ## Purpose
 
@@ -101,6 +101,15 @@ Current status of handles/pulls:
 - Existing projects normalize to handles enabled, upper placement, contextual horizontal placement (centered drawers/double doors and single-door handles opposite their hinges), contextual orientation, and `Automático · Grafito`, preserving the previous appearance.
 - `No` removes pull-hole operations from compiled geometry and cutlist output; `Hueco` deliberately retains those manufacturing operations.
 - Type and finish variants remain visual in v1; model-specific drilling patterns and purchasable hardware specifications are a future manufacturing step.
+
+Current status of material rendering:
+
+- The existing material catalogue remains the product model; there is no separate `Madera v2` material or user-facing grain toggle.
+- Wood presets now render grain automatically in each panel's local coordinate system. The longest local board dimension determines the longitudinal grain direction, so shelves, sides, and fronts remain coherent when moved or rotated.
+- End caps receive a restrained procedural end-grain treatment, while broad faces retain the species-specific pattern and PBR finish.
+- Lacquers and custom flat colors remain grain-free.
+- The previous grain texture encoding darkened every wood preset below its specified base color; rendering now decodes neutral grain back to the selected material color.
+- A small per-species profile controls secondary face detail and end-grain contrast without creating extra UI or persisted project state.
 
 ## Current Suggested Roadmap
 
