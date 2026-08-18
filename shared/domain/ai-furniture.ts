@@ -13,6 +13,7 @@ import {
   type FurnitureModule,
   type ModuleType,
 } from './types'
+import { clampInteriorShelfCountForHeight, INTERIOR_SHELF_COUNT_MAX, INTERIOR_SHELF_COUNT_MIN } from './interior-shelves'
 
 export interface AiFurnitureDraft {
   doc: FurnitureDoc
@@ -268,6 +269,14 @@ function normalizeModule(raw: unknown, config: FurnitureConfig, warnings: string
     module.height = snapMetric(clamp(module.height, minHeight, Math.min(config.maxModuleHeight, maxHeight)))
     module.drawerCount = drawerCount
   }
+  else if (type === 'shelf') {
+    const shelfCount = clampInteriorShelfCountForHeight(
+      source.shelfCount ?? source.interiorShelfCount,
+      module.height,
+      config,
+    )
+    if (shelfCount > 0) module.shelfCount = shelfCount
+  }
 
   return module
 }
@@ -278,6 +287,7 @@ function normalizeCompactModule(raw: unknown, config: FurnitureConfig, warnings:
       type: raw[0],
       height: raw[1],
       drawerCount: raw[2],
+      shelfCount: raw[3],
     }, config, warnings)
   }
   const source = isRecord(raw) ? raw : {}
@@ -285,6 +295,7 @@ function normalizeCompactModule(raw: unknown, config: FurnitureConfig, warnings:
     type: source.t ?? source.type,
     height: source.h ?? source.height,
     drawerCount: source.n ?? source.drawerCount,
+    shelfCount: source.q ?? source.shelfCount,
   }, config, warnings)
 }
 
@@ -425,6 +436,7 @@ export const AI_FURNITURE_RESPONSE_SCHEMA = {
                 },
                 h: { type: 'number', minimum: 0.08, maximum: 1.2 },
                 n: { type: 'integer', minimum: DRAWER_COUNT_MIN, maximum: DRAWER_COUNT_MAX },
+                q: { type: 'integer', minimum: INTERIOR_SHELF_COUNT_MIN, maximum: INTERIOR_SHELF_COUNT_MAX },
               },
             },
           },

@@ -2,6 +2,7 @@
 import { horizontalHandleStyle, pairedDoorHorizontalStyle } from '~~/components/project/handle-2d-layout'
 import { DEFAULT_FURNITURE_CONFIG, normalizePublicStyle } from '~~/shared/domain/defaults'
 import { HANDLE_FINISH_SPECS, isKnobHandleType, isSquareHandleType, moduleHasHandleHoles, moduleShowsPhysicalHandle, resolveHandleCenter, resolveHandleType } from '~~/shared/domain/handles'
+import { interiorShelfCenterOffsets, normalizeInteriorShelfCount } from '~~/shared/domain/interior-shelves'
 import type { FurnitureColumn, FurnitureConfig, FurnitureModule, PublicStyle } from '~~/shared/domain/types'
 import { moduleTypeText, uiText as t } from '~~/shared/i18n/ui-copy'
 
@@ -327,6 +328,19 @@ function drawerCount(mod: FurnitureModule): number {
   return mod.drawerCount as number
 }
 
+function interiorShelfCount(mod: FurnitureModule): number {
+  return normalizeInteriorShelfCount(mod.shelfCount)
+}
+
+function interiorShelfStyle(mod: FurnitureModule, shelfIndex: number): Record<string, string> {
+  const center = interiorShelfCenterOffsets(mod.height, mod.shelfCount, props.config)[shelfIndex - 1] ?? 0
+  const thickness = Math.max(2, meterToPx(props.config.panelThickness))
+  return {
+    height: `${thickness}px`,
+    bottom: `${meterToPx(center) - thickness / 2}px`,
+  }
+}
+
 function spacerStyle(axis: 'width' | 'height'): Record<string, string> {
   return axis === 'width' ? { width: `${We}px` } : { height: `${We}px` }
 }
@@ -609,7 +623,18 @@ function addButtonMarginTop(boundaryIndex: number): string {
                               {{ formatCentimeters(mod.height) }} cm
                             </span>
 
-                            <template v-if="mod.type === 'drawer'">
+                            <template v-if="mod.type === 'shelf'">
+                              <div
+                                v-for="i in interiorShelfCount(mod)"
+                                :key="`${mod.id}-interior-shelf-${i}`"
+                                class="pointer-events-none absolute inset-x-0 z-[5]"
+                                :class="anySelected && !isSelected(mod.id) ? 'bg-[var(--ui-border-muted)]' : 'bg-primary'"
+                                :style="interiorShelfStyle(mod, i)"
+                                aria-hidden="true"
+                              />
+                            </template>
+
+                            <template v-else-if="mod.type === 'drawer'">
                               <div
                                 v-for="i in drawerCount(mod) - 1"
                                 :key="`${mod.id}-drawer-sep-${i}`"

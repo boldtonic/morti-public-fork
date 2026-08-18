@@ -11,6 +11,7 @@ export interface FurnitureModule {
   type: ModuleType
   height: number // metres
   drawerCount?: number // 1..32, drawer only
+  shelfCount?: number // 0..32 interior shelves, shelf only
   handleMode?: HandleMode
   /** Legacy import compatibility. New documents persist handleMode instead. */
   handlesEnabled?: boolean
@@ -260,6 +261,6 @@ export const PANEL_ROLE_SHORT_CODE: Record<PanelRole, string> = {
   'drawer-bottom': 'DBM',
 }
 
-export const DESIGN_SCHEMA_VERSION = 6
-export const ASSEMBLY_COMPILER_VERSION = 1
+export const DESIGN_SCHEMA_VERSION = 7
+export const ASSEMBLY_COMPILER_VERSION = 2
 export const TECHNICAL_RENDERER_VERSION = 1

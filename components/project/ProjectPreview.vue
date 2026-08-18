@@ -2,6 +2,7 @@
 import { horizontalHandleStyle, pairedDoorHorizontalStyle } from '~~/components/project/handle-2d-layout'
 import { DEFAULT_FURNITURE_CONFIG, normalizePublicStyle } from '~~/shared/domain/defaults'
 import { HANDLE_FINISH_SPECS, isKnobHandleType, isSquareHandleType, moduleHasHandleHoles, moduleShowsPhysicalHandle, resolveHandleCenter, resolveHandleType } from '~~/shared/domain/handles'
+import { interiorShelfCenterOffsets, normalizeInteriorShelfCount } from '~~/shared/domain/interior-shelves'
 import type { FurnitureColumn, FurnitureConfig, FurnitureModule, PublicStyle } from '~~/shared/domain/types'
 import { moduleTypeText } from '~~/shared/i18n/ui-copy'
 
@@ -227,6 +228,19 @@ function drawerHoleStyle(mod: FurnitureModule, drawerIndex: number, holeIndex: n
 function moduleClass(mod: FurnitureModule): string {
   return mod.type === 'shelf' ? 'preview-shelf' : 'bg-primary'
 }
+
+function interiorShelfCount(mod: FurnitureModule): number {
+  return normalizeInteriorShelfCount(mod.shelfCount)
+}
+
+function interiorShelfStyle(mod: FurnitureModule, shelfIndex: number): Record<string, string> {
+  const center = interiorShelfCenterOffsets(mod.height, mod.shelfCount, furnitureConfig.value)[shelfIndex - 1] ?? 0
+  const thickness = Math.max(1, pxValue(furnitureConfig.value.panelThickness))
+  return {
+    height: `${thickness}px`,
+    bottom: `${pxValue(center) - thickness / 2}px`,
+  }
+}
 </script>
 
 <template>
@@ -273,7 +287,17 @@ function moduleClass(mod: FurnitureModule): string {
                   :style="moduleStackStyle(col, mi, mod)"
                   :aria-label="moduleTypeText(mod.type)"
                 >
-                  <template v-if="mod.type === 'drawer'">
+                  <template v-if="mod.type === 'shelf'">
+                    <div
+                      v-for="i in interiorShelfCount(mod)"
+                      :key="`${mod.id}-interior-shelf-${i}`"
+                      class="pointer-events-none absolute inset-x-0 bg-primary"
+                      :style="interiorShelfStyle(mod, i)"
+                      aria-hidden="true"
+                    />
+                  </template>
+
+                  <template v-else-if="mod.type === 'drawer'">
                     <div
                       v-for="i in (mod.drawerCount ?? 1) - 1"
                       :key="`${mod.id}-drawer-sep-${i}`"

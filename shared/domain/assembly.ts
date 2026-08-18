@@ -12,6 +12,7 @@ import type {
   PanelRole,
 } from '~~/shared/domain/types'
 import { moduleHandleHorizontalPosition, moduleHasHandleHoles } from '~~/shared/domain/handles'
+import { interiorShelfCenterOffsets } from '~~/shared/domain/interior-shelves'
 
 // ---------------------------------------------------------------------------
 // Tunables (mirrors Dt_x5Iy5.js module-level constants)
@@ -358,6 +359,28 @@ function makeHorizontalDeck(
   })
 }
 
+function compileInteriorShelves(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
+  const panels: CompiledPanel[] = []
+  const centerX = (cell.xMin + cell.xMax) / 2
+  const moduleBaseY = cell.yMin - config.panelThickness / 2 - config.panelJointClearance
+  const depth = config.depth + config.sidePanelOverhang / 2
+  const centerZ = config.sidePanelOverhang / 4
+
+  for (const [index, offsetY] of interiorShelfCenterOffsets(module.height, module.shelfCount, config).entries()) {
+    panels.push(makePanel({
+      key: `interior-shelf:${module.id}:${index}`,
+      role: 'horizontal-deck',
+      sourceModuleId: module.id,
+      position: { x: centerX, y: moduleBaseY + offsetY, z: centerZ },
+      size: { width: cell.width, height: depth, thickness: config.panelThickness },
+      orientation: 'horizontal-xz',
+      touchedModuleIds: [module.id],
+    }))
+  }
+
+  return { panels, operations: [] as PanelOperation[] }
+}
+
 function makeBackPanel(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig): CompiledPanel {
   const reserve = backPanelGrooveDepth(config)
   return makePanel({
@@ -678,7 +701,7 @@ function compileDrawer(module: FurnitureModule, cell: CompiledCellBounds, config
 }
 
 function compileModule(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
-  if (module.type === 'shelf') return { panels: [] as CompiledPanel[], operations: [] as PanelOperation[] }
+  if (module.type === 'shelf') return compileInteriorShelves(module, cell, config)
   if (module.type === 'drawer') return compileDrawer(module, cell, config)
   return compileDoorOrFrontPanels(module, cell, config)
 }

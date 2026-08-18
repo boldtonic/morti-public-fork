@@ -4,6 +4,7 @@ import type { AiFurnitureDraft, AiFurnitureGenerateResponse } from '~~/shared/do
 import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
 import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
 import { moduleHandleHorizontalPosition, moduleHandleMode } from '~~/shared/domain/handles'
+import { clampInteriorShelfCountForHeight, INTERIOR_SHELF_COUNT_MAX, INTERIOR_SHELF_COUNT_MIN, maxInteriorShelfCountForHeight, normalizeInteriorShelfCount } from '~~/shared/domain/interior-shelves'
 import type { FurnitureConfig, FurnitureModule, HandleHorizontalPosition, HandleMode, HandleOrientation, HandlePosition, ModuleType, PublicStyle } from '~~/shared/domain/types'
 import { validateFurnitureDocIssues } from '~~/shared/domain/assembly-validation'
 import { furnitureConfigText, moduleTypeText, uiText as t } from '~~/shared/i18n/ui-copy'
@@ -17,6 +18,7 @@ import {
   setColumnWidth,
   setConfigValue,
   setDrawerCount,
+  setShelfCount,
   setModuleHeight,
   setModuleHandleMode,
   setModuleHandleOrientation,
@@ -171,13 +173,20 @@ function clampModuleHeight(module: FurnitureModule, h: number): number {
   return clampNumber(h, min, max)
 }
 
-function setModuleHeightWithDrawerClamp(columnIndex: number, moduleIndex: number, module: FurnitureModule, height: number) {
+function setModuleHeightWithContentClamp(columnIndex: number, moduleIndex: number, module: FurnitureModule, height: number) {
   let nextModule = module
   if (module.type === 'drawer') {
     const drawerCount = drawerCountForHeight(module, height)
     if (drawerCount !== (module.drawerCount ?? DEFAULT_DRAWER_COUNT)) {
       setDrawerCount(props.ydoc, columnIndex, moduleIndex, drawerCount)
       nextModule = { ...module, drawerCount }
+    }
+  }
+  else if (module.type === 'shelf') {
+    const shelfCount = clampInteriorShelfCountForHeight(module.shelfCount, height, config.value)
+    if (shelfCount !== normalizeInteriorShelfCount(module.shelfCount)) {
+      setShelfCount(props.ydoc, columnIndex, moduleIndex, shelfCount)
+      nextModule = { ...module, shelfCount }
     }
   }
   setModuleHeight(props.ydoc, columnIndex, moduleIndex, clampModuleHeight(nextModule, height))
@@ -228,7 +237,7 @@ function setColumnWidthAt(columnIndex: number, w: number) {
 function setModuleHeightAt(columnIndex: number, moduleIndex: number, h: number) {
   const module = columns.value[columnIndex]?.modules[moduleIndex]
   if (!module) return
-  setModuleHeightWithDrawerClamp(columnIndex, moduleIndex, module, h)
+  setModuleHeightWithContentClamp(columnIndex, moduleIndex, module, h)
 }
 
 function removeSelectedModule(columnIndex: number, moduleIndex: number) {
@@ -246,7 +255,7 @@ function updateSelectedModulesType(type: ModuleType) {
   for (const info of selectedModuleInfos.value) {
     setModuleType(props.ydoc, info.columnIndex, info.moduleIndex, type)
     const module = readFurnitureDoc(props.ydoc).columns[info.columnIndex]?.modules[info.moduleIndex]
-    if (module) setModuleHeightWithDrawerClamp(info.columnIndex, info.moduleIndex, module, module.height)
+    if (module) setModuleHeightWithContentClamp(info.columnIndex, info.moduleIndex, module, module.height)
   }
 }
 
@@ -262,7 +271,7 @@ function updateSelectedModulesColumnWidth(width: number) {
 
 function updateSelectedModulesHeight(height: number) {
   for (const info of selectedModuleInfos.value) {
-    setModuleHeightWithDrawerClamp(info.columnIndex, info.moduleIndex, info.module, height)
+    setModuleHeightWithContentClamp(info.columnIndex, info.moduleIndex, info.module, height)
   }
 }
 
@@ -271,8 +280,16 @@ function updateSelectedModulesDrawerCount(drawerCount: number) {
   for (const info of selectedModuleInfos.value) {
     if (info.module.type === 'drawer') {
       setDrawerCount(props.ydoc, info.columnIndex, info.moduleIndex, next)
-      setModuleHeightWithDrawerClamp(info.columnIndex, info.moduleIndex, { ...info.module, drawerCount: next }, info.module.height)
+      setModuleHeightWithContentClamp(info.columnIndex, info.moduleIndex, { ...info.module, drawerCount: next }, info.module.height)
     }
+  }
+}
+
+function updateSelectedModulesShelfCount(shelfCount: number) {
+  for (const info of selectedModuleInfos.value) {
+    if (info.module.type !== 'shelf') continue
+    const next = clampInteriorShelfCountForHeight(shelfCount, info.module.height, config.value)
+    setShelfCount(props.ydoc, info.columnIndex, info.moduleIndex, next)
   }
 }
 
@@ -437,6 +454,20 @@ const selectedDrawerCountValue = computed(() => {
   if (selectedTypeValue.value !== 'drawer') return ''
   const first = selectedModuleInfos.value[0]?.module.drawerCount
   return typeof first === 'number' && selectedModuleInfos.value.every(info => info.module.type === 'drawer' && info.module.drawerCount === first) ? String(first) : ''
+})
+
+const selectedShelfCountValue = computed(() => {
+  if (selectedTypeValue.value !== 'shelf') return ''
+  const first = normalizeInteriorShelfCount(selectedModuleInfos.value[0]?.module.shelfCount)
+  return selectedModuleInfos.value.every(info =>
+    info.module.type === 'shelf' && normalizeInteriorShelfCount(info.module.shelfCount) === first,
+  ) ? String(first) : ''
+})
+
+const selectedShelfCountMax = computed(() => {
+  const shelfModules = selectedModuleInfos.value.filter(info => info.module.type === 'shelf')
+  if (shelfModules.length === 0) return INTERIOR_SHELF_COUNT_MIN
+  return Math.min(...shelfModules.map(info => maxInteriorShelfCountForHeight(info.module.height, config.value)))
 })
 
 const selectedHandleModuleInfos = computed(() => selectedModuleInfos.value.filter(info => info.module.type !== 'shelf'))
@@ -695,6 +726,20 @@ function onSelectedDrawerCountCommit(event: Event) {
   input.value = String(next)
 }
 
+function onSelectedShelfCountCommit(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  if (!input) return
+  const value = Number(input.value.trim())
+  const rounded = Math.round(value)
+  if (!Number.isFinite(value) || rounded < INTERIOR_SHELF_COUNT_MIN || rounded > INTERIOR_SHELF_COUNT_MAX) {
+    input.value = selectedShelfCountValue.value
+    return
+  }
+  const next = Math.min(rounded, selectedShelfCountMax.value)
+  updateSelectedModulesShelfCount(next)
+  input.value = String(next)
+}
+
 function updateSelectedHandleMode(mode: HandleMode) {
   for (const info of selectedHandleModuleInfos.value) {
     setModuleHandleMode(props.ydoc, info.columnIndex, info.moduleIndex, mode)
@@ -859,6 +904,25 @@ if (getCurrentScope()) {
                         :aria-label="t('selectedDrawerCountAria')"
                         @keydown.enter.prevent="onSelectedDrawerCountCommit"
                         @blur="onSelectedDrawerCountCommit"
+                      >
+                    </dd>
+                  </template>
+
+                  <template v-if="selectedTypeValue === 'shelf'">
+                    <dt class="self-center text-muted">
+                      {{ t('interiorShelves') }}
+                    </dt>
+                    <dd class="min-w-0">
+                      <input
+                        :value="selectedShelfCountValue"
+                        type="text"
+                        inputmode="numeric"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated disabled:cursor-not-allowed disabled:opacity-50"
+                        :placeholder="t('mixed')"
+                        :aria-label="t('selectedInteriorShelfCountAria')"
+                        :disabled="selectedShelfCountMax === 0"
+                        @keydown.enter.prevent="onSelectedShelfCountCommit"
+                        @blur="onSelectedShelfCountCommit"
                       >
                     </dd>
                   </template>

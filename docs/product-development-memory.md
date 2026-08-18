@@ -112,6 +112,13 @@ Current status of material rendering:
 - A small per-species profile controls secondary face detail and end-grain contrast without creating extra UI or persisted project state.
 - Each panel receives a deterministic texture offset from its stable panel key, preventing repeated drawer and door fronts while keeping renders reproducible.
 
+Current status of open modules and interior shelves:
+
+- Open `balda` modules support a persisted `Baldas interiores` count; `0` preserves the previous empty opening.
+- Interior shelves are spaced evenly and limited by the module height, panel thickness, joint clearance, and configured minimum opening height.
+- The same count drives the Design inspector, 2D editor, compact preview, 3D assembly, exports, and cutlist because every interior shelf compiles as a real horizontal deck panel.
+- Existing projects remain visually unchanged until an interior shelf count is explicitly added.
+
 ## Current Suggested Roadmap
 
 Near-term order:
