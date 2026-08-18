@@ -360,7 +360,9 @@ scene.add(keyLight)
 scene.add(keyLight.target)
 
 const hemisphereGroup = new THREE.Group()
-hemisphereGroup.add(new THREE.HemisphereLight(0xffffff, 0x334455, 2))
+// Soft neutral bounce keeps downward-facing panel surfaces legible without
+// flattening the key-light modelling or tinting the selected material.
+hemisphereGroup.add(new THREE.HemisphereLight(0xffffff, 0xc9c5be, 1.1))
 
 // Skydome (always hidden per spec)
 const skydomeMat = new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.BackSide, depthWrite: false })
