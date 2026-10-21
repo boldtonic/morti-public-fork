@@ -1,6 +1,6 @@
 # Product Development Memory
 
-Last updated: 2026-08-31
+Last updated: 2026-10-21
 
 ## Purpose
 
@@ -119,7 +119,10 @@ Current status of open modules and interior shelves:
 - The same count drives the Design inspector, 2D editor, compact preview, 3D assembly, exports, and cutlist because every interior shelf compiles as a real horizontal deck panel.
 - Existing projects remain visually unchanged until an interior shelf count is explicitly added.
 
-## 0.1 Release Hardening
+## 0.1 Release
+
+- Version `0.1.0` completed its automated gate and Fernando's manual product review on 2026-10-21.
+- The release commit is the source of the annotated `v0.1.0` tag; future work continues under `Unreleased` in `CHANGELOG.md`.
 
 - The deployable Nitro artifact has no known high-severity dependency findings after updating Nuxt, Nuxt UI, PostHog, and patched transitive packages. CI also rejects critical findings across the complete source/build tree; remaining high findings are confined to currently unpatched Nuxt development tooling and are not present in the deployed artifact.
 - OTP verification now locks each challenge inside a transaction, preserving the five-attempt limit and single-use behavior under concurrent requests.

@@ -4,6 +4,8 @@ All notable product changes will be recorded here. Tenon/Morti follows semantic 
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-21
+
 ### Added
 
 - Interior shelves for open modules, configurable from Design.

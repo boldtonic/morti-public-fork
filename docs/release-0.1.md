@@ -1,4 +1,6 @@
-# Tenon/Morti 0.1 Release Candidate
+# Tenon/Morti 0.1 Release
+
+Released: 2026-10-21
 
 ## Positioning
 
