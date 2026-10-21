@@ -106,6 +106,10 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: { include: [] },
+    // Allow temporary Cloudflare Quick Tunnel hostnames during local demos.
+    server: {
+      allowedHosts: ['.trycloudflare.com', '.ts.net'],
+    },
   },
 
   nitro: {
