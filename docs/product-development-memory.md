@@ -1,6 +1,6 @@
 # Product Development Memory
 
-Last updated: 2026-08-18
+Last updated: 2026-08-31
 
 ## Purpose
 
@@ -61,7 +61,7 @@ Admin workflow to create a demo:
 3. Use the project/card menu and choose "Marcar como demo".
 4. Check the home Demos section.
 
-Current local caveat: `LOCAL_AUTH_BYPASS=true` returns `local@localhost`, but this bypass user currently has `is_admin: false`. For local product work, consider making the dev bypass admin or using a real DB user with `is_admin = true`.
+Current local behavior: `LOCAL_AUTH_BYPASS=true` provisions `local@localhost` as a development-only admin on localhost. This makes projects, publishing, and demo administration testable without Postmark; production builds always ignore the bypass.
 
 ## Recent Product/UI Work
 
@@ -118,6 +118,18 @@ Current status of open modules and interior shelves:
 - Interior shelves are spaced evenly and limited by the module height, panel thickness, joint clearance, and configured minimum opening height.
 - The same count drives the Design inspector, 2D editor, compact preview, 3D assembly, exports, and cutlist because every interior shelf compiles as a real horizontal deck panel.
 - Existing projects remain visually unchanged until an interior shelf count is explicitly added.
+
+## 0.1 Release Hardening
+
+- The deployable Nitro artifact has no known high-severity dependency findings after updating Nuxt, Nuxt UI, PostHog, and patched transitive packages. CI also rejects critical findings across the complete source/build tree; remaining high findings are confined to currently unpatched Nuxt development tooling and are not present in the deployed artifact.
+- OTP verification now locks each challenge inside a transaction, preserving the five-attempt limit and single-use behavior under concurrent requests.
+- Local Yjs documents recover from the newest valid checkpoint instead of silently opening an empty design; unrecoverable bytes remain downloadable for diagnosis.
+- `.morti` imports validate envelope structure, base64, Yjs data, and future format/schema versions while retaining legacy raw-update compatibility.
+- Cloud autosync keys its state by local project, cloud record, and user identity, and re-runs on login, logout, or account changes.
+- Postgres schema changes are numbered in `schema_migrations`, serialized with an advisory lock, and include retention cleanup for expired operational data.
+- Public remix counts are rate limited and can no longer be changed through the owner project patch endpoint.
+- CI rejects critical source/build dependency findings, typechecks, tests, builds, and separately audits the deployable Nitro artifact for high-severity findings on every branch/PR candidate.
+- Release positioning is explicitly product-preview: cutlist and machining output still require independent verification before manufacturing.
 
 ## Current Suggested Roadmap
 
