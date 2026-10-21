@@ -99,8 +99,14 @@ export function useCloudProjects() {
     for (const record of records) {
       const projectId = record.client_project_id
       const existing = await local.getLocalProject(projectId)
+      // Legacy versions allowed one browser project to be synced by multiple
+      // accounts. Never overwrite another owner's local row when those old
+      // cloud records share a client project id. ProjectBundleV2 will give the
+      // cloud copy its own portable identity.
+      if (!existing && await local.hasStoredLocalProjectId(projectId)) continue
       const row: LocalProjectRow = {
         id: projectId,
+        ownerId: user.value.id,
         name: record.name,
         cloudId: record.id,
         createdAt: existing?.createdAt ?? record.created,

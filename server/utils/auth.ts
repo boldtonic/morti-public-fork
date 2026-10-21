@@ -36,20 +36,34 @@ function hostNameFromHeader(value: string): string {
   return first.split(':')[0] ?? ''
 }
 
-function isLocalhostHost(host: string): boolean {
+export function isLocalhostHost(host: string): boolean {
   return host === 'localhost'
     || host === '127.0.0.1'
     || host === '::1'
-    || host === '0.0.0.0'
+}
+
+export function isLoopbackAddress(address: string | undefined): boolean {
+  const value = address?.trim().toLowerCase() ?? ''
+  return value === '127.0.0.1'
+    || value === '::1'
+    || value === '::ffff:127.0.0.1'
+}
+
+export function isLocalBypassRequestOrigin(hostHeader: string, remoteAddress: string | undefined): boolean {
+  if (!isLocalhostHost(hostNameFromHeader(hostHeader))) return false
+  // Some Nitro development adapters do not expose the underlying socket.
+  // In that case the raw Host header is the strongest available signal; the
+  // supported dev command also binds the process itself to 127.0.0.1.
+  return remoteAddress === undefined || isLoopbackAddress(remoteAddress)
 }
 
 export function isLocalAuthBypassAllowed(event: H3Event): boolean {
   if (!import.meta.dev) return false
   const config = useRuntimeConfig()
   if (config.localAuthBypass !== true) return false
-  const hostHeader = firstHeaderValue(event.node.req.headers['x-forwarded-host'])
-    || firstHeaderValue(event.node.req.headers.host)
-  return isLocalhostHost(hostNameFromHeader(hostHeader))
+  const hostHeader = firstHeaderValue(event.node.req.headers.host)
+  const remoteAddress = event.node.req.socket.remoteAddress
+  return isLocalBypassRequestOrigin(hostHeader, remoteAddress)
 }
 
 export function getLocalAuthBypassUser(): AuthUser {

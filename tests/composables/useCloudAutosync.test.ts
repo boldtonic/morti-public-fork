@@ -78,6 +78,7 @@ describe('useCloudAutosync', () => {
 
   async function setup(options: {
     initialUser?: AuthUser | null
+    projectOwnerId?: string
     ensureCloudProject?: ReturnType<typeof vi.fn>
     fetchSnapshotBytes?: ReturnType<typeof vi.fn>
   } = {}) {
@@ -85,6 +86,7 @@ describe('useCloudAutosync', () => {
     const isCloudAuthed = computed(() => !!user.value?.id)
     const project = ref<LocalProjectRow | null>({
       id: 'local-project',
+      ownerId: options.projectOwnerId ?? 'user-a',
       name: 'Project',
       cloudId: null,
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -144,7 +146,7 @@ describe('useCloudAutosync', () => {
     )
   })
 
-  it('uploads the same local fingerprint once for each cloud identity', async () => {
+  it('does not upload a project after the authenticated owner changes', async () => {
     const ensureCloudProject = vi.fn(async () => {
       return ensureCloudProject.mock.calls.length === 1
         ? cloudRecord('record-user-a', 'user-a')
@@ -157,12 +159,12 @@ describe('useCloudAutosync', () => {
 
     context.user.value = authUser('user-b')
     await nextTick()
-    await waitForCall(context.uploadSnapshotBytes, 2)
+    await context.autosync.syncNow()
 
-    expect(context.uploadSnapshotBytes.mock.calls[1]?.[0]).toBe('record-user-b')
+    expect(context.uploadSnapshotBytes).toHaveBeenCalledTimes(1)
+    expect(context.ensureCloudProject).toHaveBeenCalledTimes(1)
     expect(context.fetchSnapshotBytes.mock.calls.map(call => call[0].id)).toEqual([
       'record-user-a',
-      'record-user-b',
     ])
   })
 
@@ -205,12 +207,12 @@ describe('useCloudAutosync', () => {
     context.user.value = authUser('user-b')
     firstRecord.resolve(cloudRecord('record-a', 'user-a'))
     await nextTick()
-    await waitForCall(context.uploadSnapshotBytes, 1)
+    await context.autosync.syncNow()
 
-    expect(context.fetchSnapshotBytes).toHaveBeenCalledTimes(1)
-    expect(context.fetchSnapshotBytes.mock.calls[0]?.[0].id).toBe('record-b')
-    expect(context.uploadSnapshotBytes.mock.calls[0]?.[0]).toBe('record-b')
-    expect(readFurnitureDoc(context.doc).config.depth).toBe(0.65)
+    expect(context.ensureCloudProject).toHaveBeenCalledTimes(1)
+    expect(context.fetchSnapshotBytes).not.toHaveBeenCalled()
+    expect(context.uploadSnapshotBytes).not.toHaveBeenCalled()
+    expect(readFurnitureDoc(context.doc).config.depth).not.toBe(0.55)
   })
 
   it('retries a failed sync through the existing serialized queue', async () => {

@@ -138,20 +138,31 @@ Current status of open modules and interior shelves:
 
 Near-term order:
 
-1. Keep stable product milestones committed and pushed when they close a coherent block.
-2. Validate the Apple-like palette visually in real projects and demos.
-3. Make local dev admin workflow comfortable.
-4. Create/curate a first set of ready-to-use demo projects.
-5. Add visual realism:
-   - Pomos/tiradores first.
-   - Simple feet next.
-   - Wheels later as a separate product choice.
+1. Preserve the post-0.1 trust boundary: inert validated snapshots and owner-scoped local projects.
+2. Define and migrate to `ProjectBundleV2` so geometry, style, hardware state, import/export, duplicate, publish, remix, and cloud round-trip as one product.
+3. Define deterministic `ManufacturingPackageV1` before adding CSV, XLSX, DXF, or CNC-specific adapters.
+4. Add compiler/cutlist golden projects and a single visible validation pipeline.
+5. Select a real manufacturer, construction system, material specification, and exact hardware families before generating joinery or hinge/runner machining.
+6. Resume product realism with simple feet after the project/manufacturing contracts are stable; wheels remain a later optional product choice.
 
 Product reasoning:
 
-- Palette changes improve perception quickly with lower geometry risk.
-- Handles/pulls add realism and are already adjacent to existing drawer/door logic.
-- Simple feet are broadly useful and premium; wheels are more specific and should be optional later.
+- The v0.1 visual product is strong enough to expose deeper data-contract problems that would otherwise be hidden by export features.
+- A format such as DXF is an adapter, not the manufacturing model itself.
+- Visual hardware and machining must derive from the same versioned hardware pattern.
+- Simple feet remain broadly useful and premium, but adding them before portable project and manufacturing contracts would create more state to migrate.
+
+## Post-0.1 Deep Audit and Trust Phase
+
+- The 2026-10-21 deep audit is recorded in `docs/audits/tenon-v0.1-deep-audit.md`.
+- The audit reviewed the v0.1 code, browser behavior, automated suite, persistence/cloud model, and primary Autodesk, HOMAG, and Blum documentation.
+- It corrected two stale assumptions from the supplied external guide: v0.1 already had 54 tests, and compiled operations already carried local coordinates even though Corte did not preserve or display all of them.
+- Public and private snapshot downloads are now always inert `application/octet-stream` attachments with a restrictive response CSP. Upload and publish reject data that is not a valid Yjs update and ignore client-provided MIME types and filenames.
+- Local projects now carry an `ownerId`. Legacy rows are claimed once by the first confirmed authenticated identity that lists or opens them; subsequent accounts cannot list, open, export, delete, read snapshots from, or autosync those projects.
+- Cloud reconciliation refuses to overwrite a local row owned by another account when legacy cloud records collide on the same client project id. `ProjectBundleV2` must separate portable identity from local/cloud storage identity to resolve that historical collision fully.
+- Local auth bypass now ignores forwarded host headers, rejects `0.0.0.0`, and requires a raw loopback host. When Nitro exposes a socket address it must also be loopback; the supported dev command remains bound to `127.0.0.1`.
+- The existing local project was opened successfully after migration in the in-app browser, and no browser warnings or errors were recorded.
+- Next implementation block: `ProjectBundleV2`, then `ManufacturingPackageV1` and golden compiler projects. Corte remains preliminary until those contracts are in place.
 
 ## Collaboration Notes
 
@@ -164,7 +175,7 @@ Product reasoning:
 
 ## Git / Repo Notes
 
-- Current active branch during recent work: `codex/spanish-ui-i18n`.
+- Current active branch: `main`.
 - Local remote `origin` points to `https://github.com/boldtonic/tenon.git`.
 - The GitHub repo may still be marked as a fork, but local `upstream` was removed earlier.
 - Some `docs/superpowers/` files are tracked for the product pill spec/plan. Avoid unrelated superpowers docs unless explicitly requested.

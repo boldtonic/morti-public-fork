@@ -128,6 +128,7 @@ export interface CloudProjectRecord {
 
 export interface LocalProjectRow {
   id: string
+  ownerId?: string | null
   name: string
   cloudId: string | null
   createdAt: number | string

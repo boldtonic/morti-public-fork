@@ -37,6 +37,7 @@ export function useAuth() {
   const user = useState<AuthUser | null>('auth-user', () => loadCachedUser())
   const loading = useState<boolean>('auth-loading', () => false)
   const refreshStarted = useState<boolean>('auth-refresh-started', () => false)
+  const ready = useState<boolean>('auth-ready', () => refreshStarted.value)
 
   const isAuthed = computed(() => !!user.value?.id)
   const isVerified = computed(() => isEmailVerified(user.value))
@@ -45,6 +46,7 @@ export function useAuth() {
 
   async function refreshUser(): Promise<AuthUser | null> {
     loading.value = true
+    ready.value = false
     try {
       const res = await $fetch<{ user: AuthUser | null }>('/api/auth/me')
       user.value = res.user
@@ -58,7 +60,23 @@ export function useAuth() {
     }
     finally {
       loading.value = false
+      ready.value = true
     }
+  }
+
+  async function waitUntilReady(): Promise<void> {
+    if (!import.meta.client || ready.value) return
+    await new Promise<void>((resolve) => {
+      const stop = watch(ready, (isReady) => {
+        if (!isReady) return
+        stop()
+        resolve()
+      }, { flush: 'sync' })
+      if (ready.value) {
+        stop()
+        resolve()
+      }
+    })
   }
 
   if (import.meta.client && !refreshStarted.value) {
@@ -81,6 +99,7 @@ export function useAuth() {
       body: { otpId, code },
     })
     user.value = res.user
+    ready.value = true
     saveCachedUser(res.user)
     return res
   }
@@ -96,6 +115,7 @@ export function useAuth() {
     finally {
       saveCachedUser(null)
       user.value = null
+      ready.value = true
       await navigateTo('/')
     }
   }
@@ -103,11 +123,13 @@ export function useAuth() {
   return {
     user,
     loading,
+    ready,
     isAuthed,
     isVerified,
     isLocalBypass,
     isCloudAuthed,
     refreshUser,
+    waitUntilReady,
     requestOtp,
     authWithOtp,
     requestVerification,

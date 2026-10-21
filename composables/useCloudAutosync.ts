@@ -63,6 +63,11 @@ export function useCloudAutosync({ projectId, doc, project }: UseCloudAutosyncAr
       lastSyncError.value = null
       return
     }
+    if (currentProject.ownerId !== userId) {
+      syncStatus.value = 'idle'
+      lastSyncError.value = null
+      return
+    }
 
     syncStatus.value = 'syncing'
     lastSyncError.value = null

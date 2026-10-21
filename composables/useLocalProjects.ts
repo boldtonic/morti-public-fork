@@ -1,6 +1,7 @@
 import type * as Y from 'yjs'
 import type { LocalProjectRow } from '~~/shared/domain/types'
 import { cryptoRandomId } from '~~/shared/domain/defaults'
+import { scopeLocalProjectToOwner } from '~~/shared/domain/local-project-ownership'
 import {
   STORES,
   idbClearForProject,
@@ -21,10 +22,11 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-function makeRow(name: string): LocalProjectRow {
+function makeRow(name: string, ownerId: string): LocalProjectRow {
   const t = nowIso()
   return {
     id: cryptoRandomId(),
+    ownerId,
     name: name.trim() || 'Untitled project',
     cloudId: null,
     createdAt: t,
@@ -52,10 +54,41 @@ function stateBytes(state: DesignStateRow | undefined): Uint8Array | null {
 }
 
 export function useLocalProjects() {
+  const { user, waitUntilReady } = useAuth()
   const projects = ref<LocalProjectRow[]>([])
 
+  async function currentOwnerId(): Promise<string | null> {
+    await waitUntilReady()
+    const ownerId = user.value?.id?.trim() ?? ''
+    return ownerId.length > 0 ? ownerId : null
+  }
+
+  async function requireOwnerId(): Promise<string> {
+    const ownerId = await currentOwnerId()
+    if (!ownerId) throw new Error('Sign in to access local projects.')
+    return ownerId
+  }
+
+  async function scopedProject(
+    row: LocalProjectRow | undefined,
+    ownerId: string,
+  ): Promise<LocalProjectRow | undefined> {
+    if (!row) return undefined
+    const scoped = scopeLocalProjectToOwner(row, ownerId)
+    if (!scoped) return undefined
+    if (scoped !== row) await idbPut<LocalProjectRow>(STORES.projects, scoped)
+    return scoped
+  }
+
   async function listLocalProjects(): Promise<LocalProjectRow[]> {
-    const rows = await idbGetAll<LocalProjectRow>(STORES.projects)
+    const ownerId = await currentOwnerId()
+    if (!ownerId) {
+      projects.value = []
+      return []
+    }
+    const storedRows = await idbGetAll<LocalProjectRow>(STORES.projects)
+    const rows = (await Promise.all(storedRows.map(row => scopedProject(row, ownerId))))
+      .filter((row): row is LocalProjectRow => !!row)
     rows.sort((a, b) => {
       const ap = a.pinned ? 1 : 0
       const bp = b.pinned ? 1 : 0
@@ -67,11 +100,17 @@ export function useLocalProjects() {
   }
 
   async function getLocalProject(id: string): Promise<LocalProjectRow | undefined> {
-    return await idbGet<LocalProjectRow>(STORES.projects, id)
+    const ownerId = await currentOwnerId()
+    if (!ownerId) return undefined
+    return await scopedProject(await idbGet<LocalProjectRow>(STORES.projects, id), ownerId)
+  }
+
+  async function hasStoredLocalProjectId(id: string): Promise<boolean> {
+    return !!await idbGet<LocalProjectRow>(STORES.projects, id)
   }
 
   async function createLocalProject(name: string): Promise<LocalProjectRow> {
-    const row = makeRow(name)
+    const row = makeRow(name, await requireOwnerId())
     await idbPut<LocalProjectRow>(STORES.projects, row)
     await writeFreshDesignState(row.id)
     await listLocalProjects()
@@ -111,6 +150,7 @@ export function useLocalProjects() {
   }
 
   async function deleteLocalProject(id: string): Promise<void> {
+    if (!await getLocalProject(id)) return
     await idbDelete(STORES.projects, id)
     await idbClearForProject(id)
     await listLocalProjects()
@@ -120,7 +160,7 @@ export function useLocalProjects() {
     const src = await getLocalProject(id)
     if (!src) return null
     const srcState = await idbGet<DesignStateRow>(STORES.designState, id)
-    const row = makeRow(name ?? `${src.name} copy`)
+    const row = makeRow(name ?? `${src.name} copy`, await requireOwnerId())
     await idbPut<LocalProjectRow>(STORES.projects, row)
     const srcBytes = stateBytes(srcState)
     if (srcBytes) {
@@ -142,7 +182,7 @@ export function useLocalProjects() {
     ])
     const doc = await importDocFromBlob(blob)
     const update = Yjs.encodeStateAsUpdate(doc)
-    const row = makeRow(name)
+    const row = makeRow(name, await requireOwnerId())
     await idbPut<LocalProjectRow>(STORES.projects, row)
     await idbPut<DesignStateRow>(STORES.designState, { projectId: row.id, update, snapshot: update, updatedAt: nowIso() })
     await listLocalProjects()
@@ -158,7 +198,7 @@ export function useLocalProjects() {
     ])
     ensureInitialized(doc)
     const update = Yjs.encodeStateAsUpdate(doc)
-    const row = makeRow(name)
+    const row = makeRow(name, await requireOwnerId())
     await idbPut<LocalProjectRow>(STORES.projects, row)
     await idbPut<DesignStateRow>(STORES.designState, { projectId: row.id, update, snapshot: update, updatedAt: nowIso() })
     await listLocalProjects()
@@ -166,6 +206,7 @@ export function useLocalProjects() {
   }
 
   async function exportMortiFile(id: string): Promise<Blob | null> {
+    if (!await getLocalProject(id)) return null
     const state = await idbGet<DesignStateRow>(STORES.designState, id)
     const bytes = stateBytes(state)
     if (!bytes) return null
@@ -181,12 +222,14 @@ export function useLocalProjects() {
   }
 
   async function getDesignSnapshot(id: string): Promise<Uint8Array | null> {
+    if (!await getLocalProject(id)) return null
     const state = await idbGet<DesignStateRow>(STORES.designState, id)
     const bytes = stateBytes(state)
     return bytes ? new Uint8Array(bytes) : null
   }
 
   async function putDesignSnapshot(id: string, update: Uint8Array): Promise<void> {
+    if (!await getLocalProject(id)) throw new Error('Local project is not available for this account.')
     const copy = new Uint8Array(update.byteLength)
     copy.set(update)
     await idbPut<DesignStateRow>(STORES.designState, { projectId: id, update: copy, snapshot: copy, updatedAt: nowIso() })
@@ -196,6 +239,7 @@ export function useLocalProjects() {
     projects,
     listLocalProjects,
     getLocalProject,
+    hasStoredLocalProjectId,
     createLocalProject,
     updateLocalProject,
     renameLocalProject,
