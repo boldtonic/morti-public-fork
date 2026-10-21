@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CloudProjectRecord, FurnitureColumn, FurnitureConfig, LocalProjectRow } from '~~/shared/domain/types'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 
 interface PreviewData {
   columns: FurnitureColumn[]
@@ -46,19 +47,19 @@ const showProjects = computed(() => isSignedIn.value)
 const cardDemos = computed(() =>
   demos.value.map(rec => ({
     id: rec.id,
-    name: rec.name?.trim() || 'Demo project',
+    name: rec.name?.trim() || t('demoProject'),
     createdAt: rec.created ?? rec.updated ?? new Date(0).toISOString(),
     updatedAt: rec.updated ?? rec.created ?? new Date(0).toISOString(),
     pinned: false,
   })),
 )
 
-const renameDialogTitle = 'Rename project'
+const renameDialogTitle = t('renameProject')
 const deleteDialogMessage = computed(() => {
   const name = deleteProjectId.value
-    ? localProjects.value.find(row => row.id === deleteProjectId.value)?.name ?? 'this project'
-    : 'this project'
-  const base = `"${name}" will be removed from this device. This cannot be undone.`
+    ? localProjects.value.find(row => row.id === deleteProjectId.value)?.name ?? t('deleteProjectFallbackName')
+    : t('deleteProjectFallbackName')
+  const base = t('deleteProjectMessage', { name })
   return deleteError.value ? `${base}\n\n${deleteError.value}` : base
 })
 
@@ -117,7 +118,7 @@ async function loadDemos() {
     demoPreviewMap.value = Object.fromEntries(previews)
   }
   catch (err: unknown) {
-    demoError.value = (err as { message?: string } | null)?.message ?? 'Could not load demos.'
+    demoError.value = (err as { message?: string } | null)?.message ?? t('loadDemosError')
   }
   finally {
     demoLoading.value = false
@@ -168,13 +169,30 @@ async function toggleDemos() {
 }
 
 async function createProject() {
-  const row = await local.createLocalProject('untitled')
+  const row = await local.createLocalProject(t('defaultProjectName'))
   await navigateTo(`/project/${row.id}`)
 }
 
 function triggerImport() {
   importError.value = ''
   importInputRef.value?.click()
+}
+
+function importFailureMessage(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code
+  if (code === 'FILE_TOO_LARGE') return t('importFileTooLarge')
+  if (code === 'UNSUPPORTED_FORMAT_VERSION' || code === 'UNSUPPORTED_DESIGN_SCHEMA_VERSION') {
+    return t('importNewerVersion')
+  }
+  if (
+    code === 'INVALID_JSON'
+    || code === 'INVALID_ENVELOPE'
+    || code === 'INVALID_BASE64'
+    || code === 'INVALID_YJS_UPDATE'
+  ) {
+    return t('importDamagedFile')
+  }
+  return (error as { message?: string } | null)?.message ?? t('importFailed')
 }
 
 async function importProject(event: Event) {
@@ -184,12 +202,12 @@ async function importProject(event: Event) {
   if (!file) return
   importError.value = ''
   try {
-    if (!/\.(morti|madera)$/i.test(file.name)) throw new Error('Choose a .morti file.')
+    if (!/\.(morti|madera)$/i.test(file.name)) throw new Error(t('chooseMortiFile'))
     const row = await local.importMortiFile(file, file.name.replace(/\.(morti|madera)$/i, ''))
     await navigateTo(`/project/${row.id}`)
   }
   catch (err: unknown) {
-    importError.value = (err as { message?: string } | null)?.message ?? 'Import failed.'
+    importError.value = importFailureMessage(err)
   }
 }
 
@@ -222,7 +240,7 @@ async function confirmDelete() {
       await cloud.softDeleteCloudProjectForClientId(projectId)
     }
     catch (err: unknown) {
-      deleteError.value = (err as { message?: string } | null)?.message ?? 'Could not remove the cloud copy. Try again or check your connection.'
+      deleteError.value = (err as { message?: string } | null)?.message ?? t('cloudCopyDeleteError')
       return
     }
   }
@@ -257,7 +275,7 @@ async function toggleDemo(projectId: string) {
     await loadProjects()
   }
   catch (err: unknown) {
-    demoToggleError.value = (err as { message?: string } | null)?.message ?? 'Could not update demo status. Check your admin permissions.'
+    demoToggleError.value = (err as { message?: string } | null)?.message ?? t('demoStatusError')
   }
 }
 
@@ -297,7 +315,7 @@ function isDemo(projectId: string): boolean {
       class="absolute right-3 top-3 z-30 sm:right-4 sm:top-4"
     >
       <UButton
-        label="Sign out"
+        :label="t('signOut')"
         color="neutral"
         variant="ghost"
         size="sm"
@@ -311,7 +329,7 @@ function isDemo(projectId: string): boolean {
       class="absolute right-3 top-3 z-30 sm:right-4 sm:top-4"
     >
       <UButton
-        label="Sign in"
+        :label="t('signIn')"
         color="neutral"
         icon="i-lucide-log-in"
         class="pointer-events-auto shrink-0 transition-transform active:scale-[0.97]"
@@ -332,7 +350,7 @@ function isDemo(projectId: string): boolean {
                 ]"
                 @click="demoMode = false"
               >
-                Projects
+                {{ t('projects') }}
               </button>
               <button
                 type="button"
@@ -342,7 +360,7 @@ function isDemo(projectId: string): boolean {
                 ]"
                 @click="toggleDemos"
               >
-                Demos
+                {{ t('demos') }}
               </button>
             </template>
             <template v-else>
@@ -350,7 +368,7 @@ function isDemo(projectId: string): boolean {
                 Morti
               </h1>
               <p class="text-sm text-muted">
-                Simple furniture builder
+                {{ t('simpleFurnitureBuilder') }}
               </p>
             </template>
           </div>
@@ -359,7 +377,7 @@ function isDemo(projectId: string): boolean {
             <template v-if="isSignedIn">
               <UButton
                 icon="i-lucide-folder-input"
-                label="Import"
+                :label="t('import')"
                 color="neutral"
                 variant="outline"
                 class="transition-transform active:scale-[0.97]"
@@ -367,7 +385,7 @@ function isDemo(projectId: string): boolean {
               />
               <UButton
                 icon="i-lucide-plus"
-                label="New project"
+                :label="t('newProject')"
                 color="primary"
                 class="transition-transform active:scale-[0.97]"
                 @click="createProject"
@@ -412,11 +430,11 @@ function isDemo(projectId: string): boolean {
             class="size-8 text-muted"
           />
           <p class="text-pretty text-sm text-muted">
-            No projects yet. Create one to get started.
+            {{ t('noProjectsYet') }}
           </p>
           <UButton
             icon="i-lucide-plus"
-            label="New project"
+            :label="t('newProject')"
             color="neutral"
             class="transition-transform active:scale-[0.97]"
             @click="createProject"
@@ -444,7 +462,7 @@ function isDemo(projectId: string): boolean {
             v-else-if="demos.length === 0"
             class="rounded-2xl bg-elevated/40 px-6 py-12 text-center text-sm text-muted shadow-sm ring-1 ring-default/60"
           >
-            No demo projects yet.
+            {{ t('noDemoProjectsYet') }}
           </p>
           <div
             v-else
@@ -506,7 +524,7 @@ function isDemo(projectId: string): boolean {
           v-else-if="demos.length === 0"
           class="rounded-2xl bg-elevated/40 px-6 py-12 text-center text-sm text-muted shadow-sm ring-1 ring-default/60"
         >
-          No demo projects yet.
+          {{ t('noDemoProjectsYet') }}
         </p>
         <div
           v-else
@@ -530,17 +548,17 @@ function isDemo(projectId: string): boolean {
       v-if="renameOpen"
       v-model:open="renameOpen"
       :title="renameDialogTitle"
-      primary-label="Save"
+      :primary-label="t('save')"
       @primary="confirmRename"
     >
       <UFormField
-        label="Name"
+        :label="t('name')"
         class="w-full"
       >
         <UInput
           v-model="renameValue"
           class="w-full"
-          placeholder="Project name"
+          :placeholder="t('projectName')"
           autofocus
           @keydown.enter.prevent="confirmRename"
         />
@@ -550,10 +568,10 @@ function isDemo(projectId: string): boolean {
     <AppConfirmDialog
       v-if="deleteOpen"
       v-model:open="deleteOpen"
-      title="Delete project?"
+      :title="t('deleteProjectTitle')"
       :message="deleteDialogMessage"
-      cancel-label="Cancel"
-      confirm-label="Delete"
+      :cancel-label="t('cancel')"
+      :confirm-label="t('delete')"
       @confirm="confirmDelete"
     />
 

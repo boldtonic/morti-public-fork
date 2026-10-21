@@ -31,3 +31,6 @@ deploy-key*
 promo-video/
 morti-video-edit/
 source-analysis/
+
+# Brainstorm mockups (visual companion sessions)
+.superpowers/

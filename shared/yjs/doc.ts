@@ -9,7 +9,10 @@ import {
   DEFAULT_DRAWER_COUNT,
   DRAWER_COUNT_MAX,
   DRAWER_COUNT_MIN,
+  DEFAULT_HANDLE_POSITION,
   FURNITURE_CONFIG_WRITABLE_KEYS,
+  defaultHandleOrientation,
+  moduleHasFront,
 } from '~~/shared/domain/defaults'
 import {
   DESIGN_SCHEMA_VERSION,
@@ -17,8 +20,14 @@ import {
   type FurnitureConfig,
   type FurnitureDoc,
   type FurnitureModule,
+  type HandleHorizontalPosition,
+  type HandleMode,
+  type HandleOrientation,
+  type HandlePosition,
   type ModuleType,
 } from '~~/shared/domain/types'
+import { moduleHandleHorizontalPosition, moduleHandleMode, normalizeHandleHorizontalPosition, normalizeHandleMode } from '~~/shared/domain/handles'
+import { clampInteriorShelfCountForHeight, normalizeInteriorShelfCount } from '~~/shared/domain/interior-shelves'
 
 // Migrations table — each entry mutates the doc in place. Run once, in id order.
 export const MIGRATIONS: { id: string, run(map: Y.Map<unknown>): void }[] = [
@@ -124,6 +133,38 @@ export function ensureInitialized(doc: Y.Doc) {
         else if (module.has('drawerCount')) {
           module.delete('drawerCount')
         }
+        if (module.get('type') === 'shelf') {
+          const shelfCount = normalizeInteriorShelfCount(module.get('shelfCount'))
+          if (shelfCount > 0) module.set('shelfCount', shelfCount)
+          else module.delete('shelfCount')
+        }
+        else if (module.has('shelfCount')) {
+          module.delete('shelfCount')
+        }
+        const moduleType = module.get('type') as ModuleType
+        if (moduleHasFront(moduleType)) {
+          module.set('handleMode', normalizeHandleMode(module.get('handleMode'), module.get('handlesEnabled')))
+          module.delete('handlesEnabled')
+          const handlePosition = module.get('handlePosition')
+          if (handlePosition !== 'top' && handlePosition !== 'center' && handlePosition !== 'bottom') {
+            module.set('handlePosition', DEFAULT_HANDLE_POSITION)
+          }
+          module.set(
+            'handleHorizontalPosition',
+            normalizeHandleHorizontalPosition(module.get('handleHorizontalPosition'), moduleType),
+          )
+          const handleOrientation = module.get('handleOrientation')
+          if (handleOrientation !== 'horizontal' && handleOrientation !== 'vertical') {
+            module.set('handleOrientation', defaultHandleOrientation(moduleType))
+          }
+        }
+        else {
+          module.delete('handleMode')
+          module.delete('handlesEnabled')
+          module.delete('handlePosition')
+          module.delete('handleHorizontalPosition')
+          module.delete('handleOrientation')
+        }
       })
     })
   }, 'init')
@@ -166,9 +207,24 @@ export function readFurnitureDoc(doc: Y.Doc): FurnitureDoc {
       const rawHeight = mm.get('height')
       const height = typeof rawHeight === 'number' && Number.isFinite(rawHeight) && rawHeight > 0 ? snapMetric(rawHeight) : DEFAULT_SHELF_HEIGHT
       const drawerCount = mm.get('drawerCount') as number | undefined
+      const shelfCount = mm.get('shelfCount') as number | undefined
       const m: FurnitureModule = { id, type, height }
       if (type === 'drawer' && typeof drawerCount === 'number' && Number.isFinite(drawerCount)) {
         m.drawerCount = Math.max(DRAWER_COUNT_MIN, Math.min(DRAWER_COUNT_MAX, Math.round(drawerCount)))
+      }
+      if (type === 'shelf') {
+        const count = clampInteriorShelfCountForHeight(shelfCount, height, config)
+        if (count > 0) m.shelfCount = count
+      }
+      if (moduleHasFront(type)) {
+        m.handleMode = normalizeHandleMode(mm.get('handleMode'), mm.get('handlesEnabled'))
+        const handlePosition = mm.get('handlePosition')
+        m.handlePosition = handlePosition === 'center' || handlePosition === 'bottom' ? handlePosition : DEFAULT_HANDLE_POSITION
+        m.handleHorizontalPosition = normalizeHandleHorizontalPosition(mm.get('handleHorizontalPosition'), type)
+        const handleOrientation = mm.get('handleOrientation')
+        m.handleOrientation = handleOrientation === 'horizontal' || handleOrientation === 'vertical'
+          ? handleOrientation
+          : defaultHandleOrientation(type)
       }
       modules.push(m)
     })
@@ -189,6 +245,16 @@ export function toYModule(m: FurnitureModule): Y.Map<unknown> {
   y.set('type', m.type)
   y.set('height', m.height)
   if (typeof m.drawerCount === 'number') y.set('drawerCount', m.drawerCount)
+  if (m.type === 'shelf') {
+    const shelfCount = normalizeInteriorShelfCount(m.shelfCount)
+    if (shelfCount > 0) y.set('shelfCount', shelfCount)
+  }
+  if (moduleHasFront(m.type)) {
+    y.set('handleMode', moduleHandleMode(m))
+    y.set('handlePosition', m.handlePosition ?? DEFAULT_HANDLE_POSITION)
+    y.set('handleHorizontalPosition', moduleHandleHorizontalPosition(m))
+    y.set('handleOrientation', m.handleOrientation ?? defaultHandleOrientation(m.type))
+  }
   return y
 }
 
@@ -250,6 +316,21 @@ export function setModuleType(doc: Y.Doc, columnIndex: number, moduleIndex: numb
     m.set('type', type)
     if (type === 'drawer' && !m.has('drawerCount')) m.set('drawerCount', DEFAULT_DRAWER_COUNT)
     if (type !== 'drawer' && m.has('drawerCount')) m.delete('drawerCount')
+    if (type !== 'shelf' && m.has('shelfCount')) m.delete('shelfCount')
+    if (moduleHasFront(type)) {
+      m.set('handleMode', normalizeHandleMode(m.get('handleMode'), m.get('handlesEnabled')))
+      m.delete('handlesEnabled')
+      if (!m.has('handlePosition')) m.set('handlePosition', DEFAULT_HANDLE_POSITION)
+      m.set('handleHorizontalPosition', normalizeHandleHorizontalPosition(m.get('handleHorizontalPosition'), type))
+      if (!m.has('handleOrientation')) m.set('handleOrientation', defaultHandleOrientation(type))
+    }
+    else {
+      m.delete('handleMode')
+      m.delete('handlesEnabled')
+      m.delete('handlePosition')
+      m.delete('handleHorizontalPosition')
+      m.delete('handleOrientation')
+    }
   }, 'setModuleType')
 }
 
@@ -267,6 +348,53 @@ export function setDrawerCount(doc: Y.Doc, columnIndex: number, moduleIndex: num
     if (!m) return
     m.set('drawerCount', Math.max(DRAWER_COUNT_MIN, Math.min(DRAWER_COUNT_MAX, Math.round(drawerCount))))
   }, 'setDrawerCount')
+}
+
+export function setShelfCount(doc: Y.Doc, columnIndex: number, moduleIndex: number, shelfCount: number) {
+  const snapshot = readFurnitureDoc(doc)
+  const module = snapshot.columns[columnIndex]?.modules[moduleIndex]
+  if (!module || module.type !== 'shelf') return
+  const next = clampInteriorShelfCountForHeight(shelfCount, module.height, snapshot.config)
+
+  doc.transact(() => {
+    const ms = (getFurnitureMap(doc).get('columns') as Y.Array<Y.Map<unknown>>).get(columnIndex)?.get('modules') as Y.Array<Y.Map<unknown>>
+    const m = ms.get(moduleIndex)
+    if (!m || m.get('type') !== 'shelf') return
+    if (next > 0) m.set('shelfCount', next)
+    else m.delete('shelfCount')
+  }, 'setShelfCount')
+}
+
+function getYModule(doc: Y.Doc, columnIndex: number, moduleIndex: number): Y.Map<unknown> | undefined {
+  const columns = getFurnitureMap(doc).get('columns') as Y.Array<Y.Map<unknown>>
+  const modules = columns.get(columnIndex)?.get('modules') as Y.Array<Y.Map<unknown>> | undefined
+  return modules?.get(moduleIndex)
+}
+
+export function setModuleHandleMode(doc: Y.Doc, columnIndex: number, moduleIndex: number, mode: HandleMode) {
+  doc.transact(() => {
+    getYModule(doc, columnIndex, moduleIndex)?.set('handleMode', mode)
+  }, 'setModuleHandleMode')
+}
+
+export function setModuleHandlePlacement(
+  doc: Y.Doc,
+  columnIndex: number,
+  moduleIndex: number,
+  vertical: HandlePosition,
+  horizontal: HandleHorizontalPosition,
+) {
+  doc.transact(() => {
+    const module = getYModule(doc, columnIndex, moduleIndex)
+    module?.set('handlePosition', vertical)
+    module?.set('handleHorizontalPosition', horizontal)
+  }, 'setModuleHandlePlacement')
+}
+
+export function setModuleHandleOrientation(doc: Y.Doc, columnIndex: number, moduleIndex: number, orientation: HandleOrientation) {
+  doc.transact(() => {
+    getYModule(doc, columnIndex, moduleIndex)?.set('handleOrientation', orientation)
+  }, 'setModuleHandleOrientation')
 }
 
 export function setConfigValue<K extends keyof FurnitureConfig>(doc: Y.Doc, key: K, value: FurnitureConfig[K]) {

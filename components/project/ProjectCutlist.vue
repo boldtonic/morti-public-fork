@@ -7,6 +7,7 @@ import {
   panelGroupIds,
 } from '~~/shared/domain/cutlist'
 import type { CompiledPanel, PanelOperation, PanelRole } from '~~/shared/domain/types'
+import { faceText, operationText, orientationText, panelRoleText, uiText as t } from '~~/shared/i18n/ui-copy'
 import { readFurnitureDoc } from '~~/shared/yjs/doc'
 
 interface Props {
@@ -178,9 +179,13 @@ watch([panelRows, () => props.selectedDrawingKey], ([rows]) => {
   }
 })
 
-function formatMetric(value: number | null): string {
+function formatCentimeters(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return '—'
-  return value.toFixed(3).replace(/\.?0+$/, '')
+  return (Math.round(value * 1000) / 10).toFixed(1).replace(/\.0$/, '')
+}
+
+function formatPanelRole(role: string): string {
+  return role === '—' ? role : panelRoleText(role as PanelRole)
 }
 
 function selectPanel(row: PanelRow) {
@@ -201,7 +206,7 @@ function stop() {}
   >
     <section @click.stop="stop">
       <h2 class="mb-2 text-balance text-sm font-semibold text-highlighted">
-        Panel cutlist
+        {{ t('panelCutlist') }}
       </h2>
       <div class="-mx-1 max-w-full overflow-x-auto px-1">
       <table class="w-full min-w-[32rem] border-collapse text-xs">
@@ -211,14 +216,14 @@ function stop() {}
               scope="col"
               class="w-0 whitespace-nowrap border border-default px-1 py-1.5 font-medium"
             >
-              <span class="sr-only">Group ID</span>
+              <span class="sr-only">{{ t('groupId') }}</span>
             </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Role</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Orientation </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Width</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Height </th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Thickness </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Qty</th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('role') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('orientation') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('widthCm') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('heightCm') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('thicknessCm') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('quantity') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -238,19 +243,19 @@ function stop() {}
               </span>
             </td>
             <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
-              {{ row.role }}
+              {{ panelRoleText(row.role) }}
             </td>
             <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
-              {{ row.orientation }}
+              {{ orientationText(row.orientation) }}
             </td>
             <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
-              {{ formatMetric(row.width) }}
+              {{ formatCentimeters(row.width) }}
             </td>
             <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
-              {{ formatMetric(row.height) }}
+              {{ formatCentimeters(row.height) }}
             </td>
             <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
-              {{ formatMetric(row.thickness) }}
+              {{ formatCentimeters(row.thickness) }}
             </td>
             <td :class="['border px-2 py-1.5 font-semibold tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ row.quantity }}
@@ -261,7 +266,7 @@ function stop() {}
               colspan="7"
               class="border border-default px-2 py-4 text-center text-muted"
             >
-              No panels yet
+              {{ t('noPanelsYet') }}
             </td>
           </tr>
         </tbody>
@@ -271,21 +276,21 @@ function stop() {}
 
     <section>
       <h2 class="mb-2 text-balance text-sm font-semibold text-highlighted">
-        Machining operations
+        {{ t('machiningOperations') }}
       </h2>
       <div class="-mx-1 max-w-full overflow-x-auto px-1">
       <table class="w-full min-w-[40rem] border-collapse text-xs">
         <thead>
           <tr class="bg-muted/60 text-left text-muted">
-            <th class="border border-default px-2 py-1.5 font-medium"> Operation </th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Target panel </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Face</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Diameter </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Depth</th>
-            <th class="border border-default px-2 py-1.5 font-medium">Width</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Length </th>
-            <th class="border border-default px-2 py-1.5 font-medium"> Through </th>
-            <th class="border border-default px-2 py-1.5 font-medium">Qty</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('operation') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('targetPanel') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('face') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('diameterCm') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('depthCm') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('widthCm') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('lengthCm') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('through') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('quantity') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -294,14 +299,14 @@ function stop() {}
             :key="row.key"
             class="odd:bg-default even:bg-muted/20"
           >
-            <td class="border border-default px-2 py-1.5 text-highlighted">{{ row.operationType }}</td>
-            <td class="border border-default px-2 py-1.5 text-highlighted">{{ row.targetRole }}</td>
-            <td class="border border-default px-2 py-1.5 text-muted">{{ row.face }}</td>
-            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMetric(row.diameter) }}</td>
-            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMetric(row.depth) }}</td>
-            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMetric(row.width) }}</td>
-            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMetric(row.length) }}</td>
-            <td class="border border-default px-2 py-1.5 text-muted">{{ row.through ? 'yes' : 'no' }}</td>
+            <td class="border border-default px-2 py-1.5 text-highlighted">{{ operationText(row.operationType) }}</td>
+            <td class="border border-default px-2 py-1.5 text-highlighted">{{ formatPanelRole(row.targetRole) }}</td>
+            <td class="border border-default px-2 py-1.5 text-muted">{{ faceText(row.face) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatCentimeters(row.diameter) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatCentimeters(row.depth) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatCentimeters(row.width) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatCentimeters(row.length) }}</td>
+            <td class="border border-default px-2 py-1.5 text-muted">{{ row.through ? t('yes') : t('no') }}</td>
             <td class="border border-default px-2 py-1.5 font-semibold tabular-nums text-highlighted">{{ row.quantity }}</td>
           </tr>
           <tr v-if="operationRows.length === 0">
@@ -309,7 +314,7 @@ function stop() {}
               colspan="9"
               class="border border-default px-2 py-4 text-center text-muted"
             >
-              No machining operations
+              {{ t('noMachiningOperations') }}
             </td>
           </tr>
         </tbody>

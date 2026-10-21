@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import * as Y from 'yjs'
 import { normalizePublicStyle } from '~~/shared/domain/defaults'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 import {
   ensureInitialized,
   insertColumn,
@@ -66,7 +67,7 @@ function selectCutlist() {
         size="xs"
         :variant="mode === 'design' ? 'solid' : 'ghost'"
         color="neutral"
-        label="Design"
+        :label="t('design')"
         class="active:scale-[0.97] transition-transform"
         @click="selectDesign"
       />
@@ -74,7 +75,7 @@ function selectCutlist() {
         size="xs"
         :variant="mode === 'cutlist' ? 'solid' : 'ghost'"
         color="neutral"
-        label="Cutlist"
+        :label="t('cutlist')"
         class="active:scale-[0.97] transition-transform"
         @click="selectCutlist"
       />

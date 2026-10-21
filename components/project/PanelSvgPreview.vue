@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CompiledPanel, PanelOperation } from '~~/shared/domain/types'
 import { useThemeColors } from '~~/composables/useThemeColors'
+import { panelRoleText, uiText as t } from '~~/shared/i18n/ui-copy'
 
 interface Props {
   part: CompiledPanel
@@ -184,7 +185,7 @@ const svgSegments = computed<SvgSegment[]>(() => {
   }))
 })
 
-const ariaLabel = computed(() => `Technical drawing for panel ${props.part.role}`)
+const ariaLabel = computed(() => t('technicalDrawingForPanel', { role: panelRoleText(props.part.role) }))
 </script>
 
 <template>

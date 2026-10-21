@@ -14,10 +14,12 @@ import {
   bakeSurfaceIdsForScene,
   SurfaceIdPalette,
 } from '~~/shared/three/outline'
-import { makePanelMaterial, type PanelMaterialMode, type PanelMaterialSpec } from '~~/shared/three/materials'
+import { grainOffsetForKey, makePanelMaterial, type PanelMaterialMode, type PanelMaterialSpec } from '~~/shared/three/materials'
 import { DEFAULT_CAMERA_STATE, hexColorToNumber, normalizePublicStyle } from '~~/shared/domain/defaults'
 import { resolveMaterial, type CabinetPart } from '~~/shared/domain/materials'
-import type { CameraState, CompiledPanel, FurnitureDoc, PanelOperation, PublicStyle } from '~~/shared/domain/types'
+import { HANDLE_FINISH_SPECS, isKnobHandleType, isSquareHandleType, moduleShowsPhysicalHandle } from '~~/shared/domain/handles'
+import type { CameraState, CompiledPanel, FurnitureDoc, FurnitureModule, HandleOrientation, PanelOperation, PublicStyle } from '~~/shared/domain/types'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 
 // ---------------------------------------------------------------------------
 // Constants (mirroring Dt_x5Iy5.js module-level constants)
@@ -45,11 +47,22 @@ const DESIGNER_WHEEL_ZOOM_SENSITIVITY = 0.0011
 const GRID_FADE_OUT_SECONDS = 0.14
 const GRID_FADE_IN_SECONDS = 0.35
 const GRID_VISIBILITY_EPSILON = 0.01
-const FLOOR_SHADOW_OPACITY = 0.28
+const FLOOR_SHADOW_OPACITY = 0.2
+const STUDIO_AMBIENT_INTENSITY = 0.35
+const STUDIO_KEY_INTENSITY = 1.55
+const STUDIO_HEMISPHERE_INTENSITY = 0.75
+const STUDIO_FILL_INTENSITY = 0.55
 const POSITION_SETTLE_EPSILON_SQ = 1e-8
 const ROTATION_SETTLE_EPSILON = 1e-5
 const TECHNICAL_OVERLAY_OFFSET = 6e-4
 const TECHNICAL_HOLE_SEGMENTS = 32
+const PULL_HANDLE_MIN_DIAMETER = 0.024
+const PULL_HANDLE_MAX_DIAMETER = 0.038
+const PULL_HANDLE_STEM_RATIO = 0.22
+const PULL_HANDLE_STEM_DEPTH = 0.011
+const PULL_HANDLE_FACE_GAP = 0.0012
+const PULL_BAR_MIN_LENGTH = 0.065
+const PULL_BAR_MAX_LENGTH = 0.14
 
 interface ViewHelperOptions {
   viewportPixels?: number
@@ -350,8 +363,12 @@ keyLight.castShadow = false
 scene.add(keyLight)
 scene.add(keyLight.target)
 
-const hemisphereGroup = new THREE.Group()
-hemisphereGroup.add(new THREE.HemisphereLight(0xffffff, 0x334455, 2))
+const studioFillGroup = new THREE.Group()
+studioFillGroup.add(new THREE.HemisphereLight(0xffffff, 0xd3cfc8, STUDIO_HEMISPHERE_INTENSITY))
+const fillLight = new THREE.DirectionalLight(0xffffff, STUDIO_FILL_INTENSITY)
+fillLight.position.set(-3, -2, 4)
+fillLight.target.position.set(0, 0, 0)
+studioFillGroup.add(fillLight, fillLight.target)
 
 // Skydome (always hidden per spec)
 const skydomeMat = new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.BackSide, depthWrite: false })
@@ -374,12 +391,21 @@ function disposeObjectMaterial(material: THREE.Material | THREE.Material[]) {
 }
 
 function disposeObjectTree(object: THREE.Object3D) {
+  const geometries = new Set<THREE.BufferGeometry>()
+  const materials = new Set<THREE.Material>()
   object.traverse((child) => {
     const geometry = (child as THREE.Mesh | THREE.LineSegments).geometry
-    if (geometry) geometry.dispose()
+    if (geometry) geometries.add(geometry)
     const material = (child as THREE.Mesh | THREE.LineSegments).material
-    if (material) disposeObjectMaterial(material)
+    if (Array.isArray(material)) {
+      for (const mat of material) materials.add(mat)
+    }
+    else if (material) {
+      materials.add(material)
+    }
   })
+  for (const geometry of geometries) geometry.dispose()
+  for (const material of materials) material.dispose()
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -584,6 +610,8 @@ function panelMaterialSpec(panel: CompiledPanel): PanelMaterialSpec {
     roughness: resolved.roughness,
     metalness: resolved.metalness,
     grain: resolved.grain,
+    boardSize: [panel.width, panel.height, panel.thickness],
+    grainOffset: grainOffsetForKey(panel.key),
   }
 }
 
@@ -660,6 +688,199 @@ function operationCenter(op: PanelOperation) {
   }
 }
 
+function isPullHoleOperation(panel: CompiledPanel, op: PanelOperation): boolean {
+  return op.operationType === 'through-hole'
+    && op.targetPanelKey === panel.key
+    && op.id.startsWith('op:pull-hole:')
+    && (op.diameter ?? 0) > 0
+}
+
+function pullHandleDiameter(panel: CompiledPanel, op: PanelOperation): number {
+  const requested = Math.max(PULL_HANDLE_MIN_DIAMETER, (op.diameter ?? PULL_HANDLE_MIN_DIAMETER) * 1.18)
+  const maxByPanel = Math.max(PULL_HANDLE_MIN_DIAMETER, Math.min(panel.width, panel.height) * 0.4)
+  return Math.min(PULL_HANDLE_MAX_DIAMETER, maxByPanel, requested)
+}
+
+function makePullHandleMaterial(): THREE.MeshStandardMaterial {
+  const finish = resolvedPublicStyle.value.rendered.handles.finish
+  const spec = HANDLE_FINISH_SPECS[finish]
+  return new THREE.MeshStandardMaterial({
+    color: new THREE.Color(spec.color),
+    metalness: spec.metalness,
+    roughness: spec.roughness,
+  })
+}
+
+function makePullHandleStemGeometry(radius: number, depth: number, square = false): THREE.BufferGeometry {
+  if (square) {
+    const geometry = new THREE.BoxGeometry(radius * 2, radius * 2, depth)
+    addOutlineExcludeAttribute(geometry, 0)
+    return geometry
+  }
+  const geometry = new THREE.CylinderGeometry(radius, radius * 0.92, depth, 24)
+  geometry.rotateX(Math.PI / 2)
+  addOutlineExcludeAttribute(geometry, 0)
+  return geometry
+}
+
+function makePullHandleCapGeometry(radius: number): THREE.SphereGeometry {
+  const geometry = new THREE.SphereGeometry(radius, 32, 16)
+  addOutlineExcludeAttribute(geometry, 0)
+  return geometry
+}
+
+function makeSquarePullHandleCapGeometry(radius: number): THREE.BoxGeometry {
+  const geometry = new THREE.BoxGeometry(radius * 1.72, radius * 1.72, radius * 0.9)
+  addOutlineExcludeAttribute(geometry, 0)
+  return geometry
+}
+
+function makePullBarGeometry(radius: number, length: number, square = false): THREE.BufferGeometry {
+  if (square) {
+    const geometry = new THREE.BoxGeometry(length, radius * 1.7, radius * 1.7)
+    addOutlineExcludeAttribute(geometry, 0)
+    return geometry
+  }
+  const geometry = new THREE.CylinderGeometry(radius, radius, length, 32)
+  geometry.rotateZ(Math.PI / 2)
+  addOutlineExcludeAttribute(geometry, 0)
+  return geometry
+}
+
+function addPullHandleAt(
+  group: THREE.Group,
+  panel: CompiledPanel,
+  op: PanelOperation,
+  center = operationCenter(op),
+  square = false,
+) {
+  const diameter = pullHandleDiameter(panel, op)
+  const capRadius = diameter / 2
+  const stemRadius = Math.max(0.004, diameter * PULL_HANDLE_STEM_RATIO)
+  const faceZ = panel.thickness / 2 + PULL_HANDLE_FACE_GAP
+  const material = makePullHandleMaterial()
+
+  const stem = new THREE.Mesh(makePullHandleStemGeometry(stemRadius, PULL_HANDLE_STEM_DEPTH, square), material)
+  stem.position.set(center.x, center.y, faceZ + PULL_HANDLE_STEM_DEPTH / 2)
+  stem.castShadow = true
+  stem.receiveShadow = true
+  stem.name = `pull-handle-stem:${op.id}`
+  group.add(stem)
+
+  const cap = new THREE.Mesh(
+    square ? makeSquarePullHandleCapGeometry(capRadius) : makePullHandleCapGeometry(capRadius),
+    material,
+  )
+  if (!square) cap.scale.z = 0.5
+  cap.position.set(center.x, center.y, faceZ + PULL_HANDLE_STEM_DEPTH + capRadius * (square ? 0.45 : 0.38))
+  cap.castShadow = true
+  cap.receiveShadow = true
+  cap.name = `pull-handle-cap:${op.id}`
+  group.add(cap)
+}
+
+function addBarHandle(
+  group: THREE.Group,
+  panel: CompiledPanel,
+  ops: PanelOperation[],
+  orientation: HandleOrientation,
+  square = false,
+) {
+  const axis = orientation === 'vertical' ? 'y' : 'x'
+  const centers = ops
+    .map(op => ({ op, center: operationCenter(op) }))
+    .sort((a, b) => a.center[axis] - b.center[axis])
+  const reference = centers[0]
+  if (!reference) return
+
+  let start = centers[0]!
+  let end = centers[centers.length - 1]!
+  if (centers.length === 1) {
+    const panelSpan = orientation === 'vertical' ? panel.height : panel.width
+    const halfSupportSpan = Math.min(PULL_BAR_MIN_LENGTH * 0.36, panelSpan * 0.12)
+    start = {
+      op: reference.op,
+      center: {
+        x: reference.center.x - (orientation === 'horizontal' ? halfSupportSpan : 0),
+        y: reference.center.y - (orientation === 'vertical' ? halfSupportSpan : 0),
+      },
+    }
+    end = {
+      op: reference.op,
+      center: {
+        x: reference.center.x + (orientation === 'horizontal' ? halfSupportSpan : 0),
+        y: reference.center.y + (orientation === 'vertical' ? halfSupportSpan : 0),
+      },
+    }
+  }
+
+  const baseDiameter = Math.max(
+    pullHandleDiameter(panel, start.op),
+    pullHandleDiameter(panel, end.op),
+  )
+  const span = Math.abs(end.center[axis] - start.center[axis])
+  const panelSpan = orientation === 'vertical' ? panel.height : panel.width
+  const maxByPanel = Math.max(PULL_BAR_MIN_LENGTH, panelSpan * 0.5)
+  const length = Math.min(PULL_BAR_MAX_LENGTH, maxByPanel, Math.max(PULL_BAR_MIN_LENGTH, span + baseDiameter * 1.15))
+  const radius = Math.max(0.0045, Math.min(0.007, baseDiameter * 0.18))
+  const stemRadius = radius * 0.72
+  const faceZ = panel.thickness / 2 + PULL_HANDLE_FACE_GAP
+  const barZ = faceZ + PULL_HANDLE_STEM_DEPTH + radius * 0.8
+  const material = makePullHandleMaterial()
+
+  for (const [index, { op, center }] of [start, end].entries()) {
+    const stemDepth = Math.max(0.004, barZ - faceZ)
+    const stem = new THREE.Mesh(makePullHandleStemGeometry(stemRadius, stemDepth, square), material)
+    stem.position.set(center.x, center.y, faceZ + stemDepth / 2)
+    stem.castShadow = true
+    stem.receiveShadow = true
+    stem.name = `pull-bar-stem:${op.id}:${index}`
+    group.add(stem)
+  }
+
+  const bar = new THREE.Mesh(makePullBarGeometry(radius, length, square), material)
+  bar.position.set((start.center.x + end.center.x) / 2, (start.center.y + end.center.y) / 2, barZ)
+  if (orientation === 'vertical') bar.rotation.z = Math.PI / 2
+  bar.castShadow = true
+  bar.receiveShadow = true
+  bar.name = `pull-bar:${panel.key}`
+  group.add(bar)
+}
+
+function addPhysicalPullHandles(group: THREE.Group, panel: CompiledPanel, module?: FurnitureModule) {
+  if (props.renderMode === 'technical') return
+  if (module && !moduleShowsPhysicalHandle(module)) return
+  if (panel.orientation !== 'vertical-xy') return
+  if (panel.role !== 'door-front' && panel.role !== 'drawer-front') return
+
+  const pullOps = panel.operations.filter(op => isPullHoleOperation(panel, op))
+  if (pullOps.length === 0) return
+
+  const handles = new THREE.Group()
+  handles.name = `pull-handles:${panel.key}`
+  const requestedType = resolvedPublicStyle.value.rendered.handles.type
+  const handleType = requestedType === 'auto'
+    ? panel.role === 'drawer-front' ? 'bar' : 'knob'
+    : requestedType
+  const orientation = module?.handleOrientation
+    ?? (panel.role === 'drawer-front' ? 'horizontal' : 'vertical')
+
+  const square = isSquareHandleType(handleType)
+  if (!isKnobHandleType(handleType)) {
+    addBarHandle(handles, panel, pullOps, orientation, square)
+  }
+  else {
+    const center = pullOps.reduce((sum, op) => {
+      const point = operationCenter(op)
+      return { x: sum.x + point.x, y: sum.y + point.y }
+    }, { x: 0, y: 0 })
+    center.x /= pullOps.length
+    center.y /= pullOps.length
+    addPullHandleAt(handles, panel, pullOps[0]!, center, square)
+  }
+  group.add(handles)
+}
+
 function addThroughHoleOverlay(group: THREE.Group, panel: CompiledPanel, op: PanelOperation, color: number) {
   const diameter = op.diameter ?? 0
   if (diameter <= 0) return
@@ -732,6 +953,7 @@ function buildScene(options: BuildSceneOptions = {}) {
   if (!fd) return
   cabinetDepthForTargets = fd.config.depth
   const compiled = compileAssembly(fd)
+  const modulesById = new Map(fd.columns.flatMap(column => column.modules.map(module => [module.id, module] as const)))
   for (const panel of compiled.panels) {
     const group = new THREE.Group()
     const geometry = compilePartGeometry(panel, compiled.operations)
@@ -742,6 +964,7 @@ function buildScene(options: BuildSceneOptions = {}) {
     mesh.receiveShadow = panelMaterialMode() === 'shaded'
     mesh.name = panel.key
     group.add(mesh)
+    addPhysicalPullHandles(group, panel, panel.sourceModuleId ? modulesById.get(panel.sourceModuleId) : undefined)
     if (props.renderMode === 'technical') {
       addTechnicalOperationOverlays(group, panel, compiled.operations)
     }
@@ -1322,17 +1545,17 @@ function setRawSrgbColor(color: THREE.Color, hex: number) {
 
 function applyRenderModeLighting() {
   if (props.renderMode === 'render-debug') {
-    ambient.intensity = 0.5
-    keyLight.intensity = 2
+    ambient.intensity = STUDIO_AMBIENT_INTENSITY
+    keyLight.intensity = STUDIO_KEY_INTENSITY
     keyLight.castShadow = true
-    if (!hemisphereGroup.parent) scene.add(hemisphereGroup)
+    if (!studioFillGroup.parent) scene.add(studioFillGroup)
     skydome.visible = false
   }
   else {
     ambient.intensity = 0.4
     keyLight.intensity = 1.15
     keyLight.castShadow = false
-    if (hemisphereGroup.parent) scene.remove(hemisphereGroup)
+    if (studioFillGroup.parent) scene.remove(studioFillGroup)
     floorCatcher.visible = false
     skydome.visible = false
   }
@@ -1553,12 +1776,14 @@ useThreejsCanvas({
   render(renderer, dt) {
     applyClearColor(renderer)
     renderer.shadowMap.enabled = props.renderMode === 'render-debug'
+    renderer.shadowMap.type = THREE.PCFShadowMap
     tickAnimations(dt)
     tickSceneGroundOpacity(dt)
     if (!props.headlessCapture || !captureLocked.value) autoFitCamera()
     if (controls) {
       controls.update()
       keyLight.target.position.copy(controls.target)
+      fillLight.target.position.copy(controls.target)
       if (viewHelper) viewHelper.center.copy(controls.target)
     }
     if (viewHelper?.animating) viewHelper.update(dt)
@@ -1609,6 +1834,7 @@ const publicStyleSignature = computed(() => {
     m.sides.presetId,   m.sides.customColor,
     m.deck.presetId,    m.deck.customColor,
     m.fronts.presetId,  m.fronts.customColor,
+    s.rendered.handles.type, s.rendered.handles.finish,
     c.background, c.grid, c.defaultPanel, c.verticalSide, c.horizontalDeck, c.moduleFront,
     t.background, t.grid, t.outlines, t.fills,
   ].join('|')
@@ -1863,14 +2089,14 @@ watch(
         <div
           class="flex flex-row flex-wrap items-center gap-0.5 rounded-full bg-muted p-1 shadow-md ring-1 ring-default/60"
           role="group"
-          aria-label="Assembly preview"
+          :aria-label="t('assemblyPreview')"
         >
           <UButton
             icon="i-lucide-package"
             size="sm"
             color="neutral"
             :variant="assemblyMode === 'normal' ? 'solid' : 'ghost'"
-            aria-label="Normal assembly view"
+            :aria-label="t('normalAssemblyView')"
             :aria-pressed="assemblyMode === 'normal'"
             class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('normal')"
@@ -1880,7 +2106,7 @@ watch(
             size="sm"
             color="neutral"
             :variant="assemblyMode === 'open-doors' ? 'solid' : 'ghost'"
-            aria-label="Open doors and drawers preview"
+            :aria-label="t('openDoorsDrawersPreview')"
             :aria-pressed="assemblyMode === 'open-doors'"
             class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('open-doors')"
@@ -1890,7 +2116,7 @@ watch(
             size="sm"
             color="neutral"
             :variant="assemblyMode === 'space-modules' ? 'solid' : 'ghost'"
-            aria-label="Space modules view — pull panels apart"
+            :aria-label="t('spaceModulesView')"
             :aria-pressed="assemblyMode === 'space-modules'"
             class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="setAssemblyMode('space-modules')"
@@ -1899,14 +2125,14 @@ watch(
         <div
           class="flex flex-wrap rounded-full bg-muted p-1 shadow-md ring-1 ring-default/60"
           role="group"
-          aria-label="Canvas render mode"
+          :aria-label="t('canvasRenderMode')"
         >
           <UButton
             icon="i-lucide-drafting-compass"
             size="sm"
             color="neutral"
             :variant="renderMode === 'technical' ? 'solid' : 'ghost'"
-            aria-label="Technical drawing — outlines only"
+            :aria-label="t('technicalDrawing')"
             :aria-pressed="renderMode === 'technical'"
             class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="emit('update:renderMode', 'technical')"
@@ -1916,7 +2142,7 @@ watch(
             size="sm"
             color="neutral"
             :variant="renderMode === 'render-debug' ? 'solid' : 'ghost'"
-            aria-label="Render debug — lit mesh with role colors"
+            :aria-label="t('renderDebug')"
             :aria-pressed="renderMode === 'render-debug'"
             class="size-8 justify-center rounded-full active:scale-[0.97] transition-transform duration-150"
             @click="emit('update:renderMode', 'render-debug')"

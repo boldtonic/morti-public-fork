@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { uiText as t } from '~~/shared/i18n/ui-copy'
+
 const { user, requestVerification, refreshUser, signOut } = useAuth()
 
 const sending = ref(false)
@@ -11,16 +13,16 @@ async function onResend() {
   message.value = ''
   const email = user.value?.email
   if (!email) {
-    error.value = 'No email address on file.'
+    error.value = t('noEmailOnFile')
     return
   }
   sending.value = true
   try {
     await requestVerification(email)
-    message.value = `We sent a verification code to ${email}.`
+    message.value = t('verificationSent', { email })
   }
   catch (err: unknown) {
-    error.value = (err as { message?: string } | null)?.message ?? 'Could not send the verification email.'
+    error.value = (err as { message?: string } | null)?.message ?? t('verificationSendError')
   }
   finally {
     sending.value = false
@@ -34,7 +36,7 @@ async function onAlreadyVerified() {
     await refreshUser()
   }
   catch (err: unknown) {
-    error.value = (err as { message?: string } | null)?.message ?? 'Could not refresh your session.'
+    error.value = (err as { message?: string } | null)?.message ?? t('sessionRefreshError')
   }
   finally {
     refreshing.value = false
@@ -55,15 +57,15 @@ async function onSignOut() {
             <UIcon name="i-lucide-mail-check" class="size-6 text-primary" />
           </div>
           <p class="text-xs font-medium uppercase tracking-[0.12em] text-muted">
-            Email verification
+            {{ t('emailVerification') }}
           </p>
           <h2 class="text-balance text-2xl font-semibold tracking-[-0.01em] text-highlighted sm:text-[28px]">
-            Confirm your email to continue
+            {{ t('confirmEmailTitle') }}
           </h2>
           <p class="text-pretty text-base leading-relaxed text-toned max-w-xs">
-            We sent a verification link to
-            <span class="font-semibold text-highlighted break-all">{{ user?.email ?? 'your email' }}</span>.
-            Open it on this device, then come back and refresh.
+            {{ t('confirmEmailCopyBefore') }}
+            <span class="font-semibold text-highlighted break-all">{{ user?.email ?? t('verificationEmailFallback') }}</span>.
+            {{ t('confirmEmailCopyAfter') }}
           </p>
         </div>
 
@@ -94,7 +96,7 @@ async function onSignOut() {
             :loading="sending"
             :disabled="refreshing"
             class="min-h-11 justify-center transition-transform active:scale-[0.97]"
-            label="Resend verification email"
+            :label="t('resendVerificationEmail')"
             @click="onResend"
           />
           <button
@@ -103,20 +105,20 @@ async function onSignOut() {
             :disabled="sending || refreshing"
             @click="onAlreadyVerified"
           >
-            {{ refreshing ? 'Refreshing…' : 'Already verified — refresh' }}
+            {{ refreshing ? t('refreshing') : t('alreadyVerifiedRefresh') }}
           </button>
         </div>
       </div>
 
       <p class="mt-5 text-center text-sm text-muted">
-        Not you?
+        {{ t('notYou') }}
         <UButton
           variant="link"
           color="neutral"
           size="sm"
           class="px-1 text-muted underline-offset-4 hover:text-highlighted hover:underline"
           :disabled="sending || refreshing"
-          label="Sign out"
+          :label="t('signOut')"
           @click="onSignOut"
         />
       </p>

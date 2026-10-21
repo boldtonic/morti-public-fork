@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { loadPublicProject } from '~/composables/useLoadPublicProject'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 
 definePageMeta({ layout: false })
 
@@ -112,7 +113,7 @@ onBeforeUnmount(() => {
           size="xs"
           icon="i-lucide-arrow-left"
           class="size-8 min-h-8 shrink-0 justify-center rounded-full transition-transform duration-150 ease-out hover:bg-transparent active:scale-[0.97]"
-          aria-label="Home"
+          :aria-label="t('home')"
         />
       </div>
       <div
@@ -130,7 +131,7 @@ onBeforeUnmount(() => {
         class="flex h-full items-center justify-center px-4"
       >
         <p class="text-sm text-muted text-pretty">
-          Loading…
+          {{ t('loading') }}
         </p>
       </div>
 
@@ -139,11 +140,11 @@ onBeforeUnmount(() => {
         class="flex h-full flex-col items-center justify-center gap-4 px-4 text-center"
       >
         <p class="max-w-sm text-sm text-error text-pretty">
-          {{ error.statusMessage ?? error.message ?? 'Could not load this project.' }}
+          {{ error.statusMessage ?? error.message ?? t('couldNotLoadProject') }}
         </p>
         <UButton
           to="/"
-          label="Home"
+          :label="t('home')"
           color="neutral"
           variant="outline"
           class="min-h-10 transition-transform duration-150 ease-out active:scale-[0.97]"
@@ -172,7 +173,7 @@ onBeforeUnmount(() => {
           <template #canvas-chrome-append>
             <UButton
               icon="i-lucide-copy-plus"
-              label="Remix"
+              :label="t('remix')"
               color="neutral"
               variant="solid"
               size="xs"
@@ -193,7 +194,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="demo-ai-cta pointer-events-auto group relative flex w-full max-w-md items-center gap-3 overflow-hidden rounded-full bg-primary px-4 py-3 text-left text-inverted shadow-[0_18px_40px_-12px_color-mix(in_oklch,var(--ui-primary)_60%,transparent),0_8px_16px_-8px_rgba(0,0,0,0.35)] ring-1 ring-inset ring-white/15 transition-[transform,box-shadow,filter] duration-200 ease-out hover:shadow-[0_22px_48px_-12px_color-mix(in_oklch,var(--ui-primary)_70%,transparent),0_10px_20px_-8px_rgba(0,0,0,0.4)] active:scale-[0.98]"
-        aria-label="Build your own with AI"
+        :aria-label="t('buildOwnWithAi')"
         @click="onAiBuildClick"
       >
         <span
@@ -207,8 +208,8 @@ onBeforeUnmount(() => {
           />
         </span>
         <span class="flex min-w-0 flex-1 flex-col">
-          <span class="text-pretty text-sm font-semibold leading-5">Build your own with AI</span>
-          <span class="truncate text-[11px] leading-4 opacity-80">Describe a cabinet, shelf, or wardrobe — generate in seconds.</span>
+          <span class="text-pretty text-sm font-semibold leading-5">{{ t('buildOwnWithAi') }}</span>
+          <span class="truncate text-[11px] leading-4 opacity-80">{{ t('buildOwnWithAiShortDescription') }}</span>
         </span>
         <UIcon
           name="i-lucide-arrow-right"

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { CameraState, CloudProjectRecord, LocalProjectRow, PublicStyle, ViewMode } from '~~/shared/domain/types'
-import { DEFAULT_CAMERA_STATE, normalizePublicStyle } from '~~/shared/domain/defaults'
+import { DesignDocLoadError } from '~/composables/useDesignDoc'
+import { DEFAULT_CAMERA_STATE, DEFAULT_FURNITURE_CONFIG, normalizePublicStyle } from '~~/shared/domain/defaults'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
+import { replaceFurnitureDoc } from '~~/shared/yjs/doc'
 import { exportDoc } from '~~/shared/yjs/morti-format'
 
 definePageMeta({ layout: false })
@@ -38,6 +41,9 @@ const {
 // --- Load local project + design doc ---
 const project = ref<LocalProjectRow | null>(null)
 const loading = ref(true)
+const projectLoadError = ref('')
+const corruptProjectUpdate = shallowRef<Uint8Array | null>(null)
+const recoveryNotice = ref('')
 const cloudRecord = ref<CloudProjectRecord | null>(null)
 const CLOUD_RECORD_FRESH_MS = 4000
 const cloudRecordMutatedAt = ref(0)
@@ -85,12 +91,26 @@ const isEditingPublishedCopy = computed<boolean>(
   () => isCloudAuthed.value && !!project.value && isPublished.value,
 )
 const isMobileViewport = ref(false)
+const viewportWidth = ref(0)
 const MOBILE_ASSEMBLY_PREVIEW_RATIO = 0.5
-const STYLE_DESKTOP_PREVIEW_RATIO = 0.76
+const DESKTOP_SIDEBAR_MIN_WIDTH_PX = 496
+const EDITOR_SPLIT_DIVIDER_WIDTH_PX = 9
+const PROJECT_TOP_CHROME_LEFT_PX = 16
+const PROJECT_TOP_CHROME_END_GAP_PX = 16
 let mobileViewportQuery: MediaQueryList | null = null
 
-function updateMobileViewport() {
+function clampDesktopSplitRatio(value: number): number {
+  const ratio = Number.isFinite(value) ? Math.min(0.95, Math.max(0.05, value)) : 0.55
+  const width = viewportWidth.value
+  if (width <= 0) return ratio
+  const maxPreviewRatio = Math.max(0.05, 1 - (DESKTOP_SIDEBAR_MIN_WIDTH_PX + EDITOR_SPLIT_DIVIDER_WIDTH_PX) / width)
+  return Math.min(ratio, maxPreviewRatio)
+}
+
+function updateViewportMetrics() {
   isMobileViewport.value = mobileViewportQuery?.matches ?? false
+  viewportWidth.value = window.innerWidth
+  if (!isMobileViewport.value) splitRatio.value = clampDesktopSplitRatio(splitRatio.value)
 }
 
 const collapseEditorInputs = computed<boolean>(
@@ -98,9 +118,8 @@ const collapseEditorInputs = computed<boolean>(
 )
 const activeSplitRatio = computed<number>(() => {
   if (viewMode.value === 'cutlist') return isMobileViewport.value ? 0.46 : 0.5
-  if (styleTabFlag.value && viewMode.value === 'style') return isMobileViewport.value ? mobileSplitRatio.value : STYLE_DESKTOP_PREVIEW_RATIO
   if (collapseEditorInputs.value) return 1
-  return isMobileViewport.value ? mobileSplitRatio.value : splitRatio.value
+  return isMobileViewport.value ? mobileSplitRatio.value : clampDesktopSplitRatio(splitRatio.value)
 })
 const canvasRenderMode = computed<'rendered' | 'render-debug' | 'technical'>(() =>
   styleTabFlag.value && viewMode.value === 'style'
@@ -198,7 +217,7 @@ function disposeProjectHandles() {
 
 function applyEditorState(s: Awaited<ReturnType<typeof useEditorState>>['state']) {
   viewMode.value = s.viewMode === 'style' && !styleTabFlag.value ? 'assembly' : s.viewMode
-  splitRatio.value = Number.isFinite(s.splitRatio) ? s.splitRatio : 0.55
+  splitRatio.value = clampDesktopSplitRatio(Number.isFinite(s.splitRatio) ? s.splitRatio : 0.55)
   selectedModules.value = (s.selectedModuleIds ?? []).map(moduleId => ({ id: moduleId }))
   zoomPercent.value = s.projectDesignerZoomPercent ?? 100
   cameraState.value = normalizeCameraState(s.camera)
@@ -217,9 +236,22 @@ async function loadProject(projectId: string) {
   disposeProjectHandles()
   resetEditorUi()
   cloudRecord.value = null
+  projectLoadError.value = ''
+  corruptProjectUpdate.value = null
+  recoveryNotice.value = ''
   demoToggleError.value = ''
   deleteError.value = ''
-  const local = await getLocalProject(projectId)
+  let local: LocalProjectRow | null
+  try {
+    local = await getLocalProject(projectId) ?? null
+  }
+  catch {
+    if (seq !== loadSeq || projectId !== id.value) return
+    project.value = null
+    projectLoadError.value = t('projectLoadFailed')
+    loading.value = false
+    return
+  }
   if (seq !== loadSeq || projectId !== id.value) return
   project.value = local ?? null
   if (!local) {
@@ -227,12 +259,27 @@ async function loadProject(projectId: string) {
     return
   }
 
-  designHandle = await useDesignDoc(projectId)
+  try {
+    designHandle = await useDesignDoc(projectId)
+  }
+  catch (error) {
+    if (seq !== loadSeq || projectId !== id.value) return
+    if (error instanceof DesignDocLoadError) {
+      projectLoadError.value = t('projectLoadCorrupt')
+      corruptProjectUpdate.value = error.originalUpdateBytes
+    }
+    else {
+      projectLoadError.value = t('projectLoadFailed')
+    }
+    loading.value = false
+    return
+  }
   if (seq !== loadSeq || projectId !== id.value) {
     designHandle.dispose()
     designHandle = null
     return
   }
+  if (designHandle.recovery) recoveryNotice.value = t('projectRecoveredMessage')
   docRef.value = designHandle.doc
   undoFn.value = designHandle.undo
   redoFn.value = designHandle.redo
@@ -256,9 +303,10 @@ async function loadProject(projectId: string) {
 onMounted(async () => {
   if (import.meta.client) {
     window.addEventListener('keydown', onKeydown)
+    window.addEventListener('resize', updateViewportMetrics)
     mobileViewportQuery = window.matchMedia('(max-width: 767.98px)')
-    updateMobileViewport()
-    mobileViewportQuery.addEventListener('change', updateMobileViewport)
+    updateViewportMetrics()
+    mobileViewportQuery.addEventListener('change', updateViewportMetrics)
   }
   if (import.meta.client) cutlistWipConfirmed.value = localStorage.getItem(CUTLIST_WIP_STORAGE_KEY) === 'true'
   await loadProject(id.value)
@@ -409,8 +457,11 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onBeforeUnmount(() => {
-  if (import.meta.client) window.removeEventListener('keydown', onKeydown)
-  mobileViewportQuery?.removeEventListener('change', updateMobileViewport)
+  if (import.meta.client) {
+    window.removeEventListener('keydown', onKeydown)
+    window.removeEventListener('resize', updateViewportMetrics)
+  }
+  mobileViewportQuery?.removeEventListener('change', updateViewportMetrics)
   mobileViewportQuery = null
   if (cloudStyleSyncTimer) clearTimeout(cloudStyleSyncTimer)
   disposeProjectHandles()
@@ -495,6 +546,16 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+function downloadCorruptProjectData() {
+  const bytes = corruptProjectUpdate.value
+  if (!bytes || !import.meta.client) return
+  const copy = bytes.slice()
+  downloadBlob(
+    new Blob([copy.buffer], { type: 'application/octet-stream' }),
+    `${safeFileName()}.recovery.yjs`,
+  )
+}
+
 async function exportProject() {
   if (!project.value || !docRef.value || !import.meta.client) return
   const blob = exportDoc(docRef.value as Parameters<typeof exportDoc>[0])
@@ -528,7 +589,7 @@ async function exportModel(format: 'glb' | 'gltf') {
 }
 
 const deleteDialogMessage = computed<string>(() => {
-  const base = `“${project.value?.name ?? 'this project'}” will be removed from this device. This cannot be undone.`
+  const base = t('deleteProjectMessage', { name: project.value?.name ?? t('deleteProjectFallbackName') })
   return deleteError.value ? `${base}\n\n${deleteError.value}` : base
 })
 
@@ -546,7 +607,7 @@ async function confirmDelete() {
       await softDeleteCloudProjectForClientId(projectId)
     }
     catch (err: unknown) {
-      deleteError.value = (err as { message?: string } | null)?.message ?? 'Could not remove the cloud copy. Try again or check your connection.'
+      deleteError.value = (err as { message?: string } | null)?.message ?? t('cloudCopyDeleteError')
       return
     }
   }
@@ -566,14 +627,23 @@ async function toggleDemo() {
     cloudRecord.value = await updateCloudProjectDemoFlag(rec.id, !isDemo.value)
   }
   catch (err: unknown) {
-    demoToggleError.value = (err as { message?: string } | null)?.message ?? 'Could not update demo status. Check your admin permissions.'
+    demoToggleError.value = (err as { message?: string } | null)?.message ?? t('demoStatusError')
   }
 }
 
 function onSplitRatioUpdate(value: number) {
   if (viewMode.value === 'cutlist') return
   if (isMobileViewport.value) mobileSplitRatio.value = value
-  else splitRatio.value = value
+  else splitRatio.value = clampDesktopSplitRatio(value)
+}
+
+function onPillRestart() {
+  if (!docRef.value) return
+  selectedModules.value = []
+  replaceFurnitureDoc(docRef.value as any, {
+    config: { ...DEFAULT_FURNITURE_CONFIG },
+    columns: [],
+  })
 }
 
 function confirmCutlistWipAlert() {
@@ -587,51 +657,52 @@ function showCutlistWipAlert() {
 }
 
 const projectMenuItems = computed(() => [
-  { label: 'Change name', icon: 'i-lucide-text-cursor-input', onSelect: openRename },
+  { label: t('changeName'), icon: 'i-lucide-text-cursor-input', onSelect: openRename },
   {
-    label: 'Export',
+    label: t('export'),
     icon: 'i-lucide-download',
     disabled: !docRef.value,
     children: [
       {
-        label: 'Project (.morti)',
+        label: t('exportProject'),
         icon: 'i-lucide-file-archive',
         onSelect: () => { void exportProject() },
       },
       {
-        label: '3D model (.glb)',
+        label: t('exportGlb'),
         icon: 'i-lucide-box',
         disabled: exportingModel.value,
         onSelect: () => { void exportModel('glb') },
       },
       {
-        label: '3D model (.gltf)',
+        label: t('exportGltf'),
         icon: 'i-lucide-file-code-2',
         disabled: exportingModel.value,
         onSelect: () => { void exportModel('gltf') },
       },
     ],
   },
-  { label: 'Duplicate', icon: 'i-lucide-copy-plus', disabled: !docRef.value, onSelect: () => { void duplicateProject() } },
+  { label: t('duplicate'), icon: 'i-lucide-copy-plus', disabled: !docRef.value, onSelect: () => { void duplicateProject() } },
   ...(isAdmin.value
     ? [
         { type: 'separator' as const },
         {
-          label: isDemo.value ? 'Remove from demos' : 'Set as demo',
+          label: isDemo.value ? t('removeFromDemos') : t('setAsDemo'),
           icon: isDemo.value ? 'i-lucide-circle-minus' : 'i-lucide-sparkles',
           onSelect: () => { void toggleDemo() },
         },
       ]
     : []),
   { type: 'separator' as const },
-  { label: 'Delete', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: openDelete },
+  { label: t('delete'), icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: openDelete },
 ])
 
-const topChromeMaxWidth = computed(() => {
-  if (viewMode.value === 'style' || collapseEditorInputs.value) {
-    return 'min(40rem, calc(100vw - 24px))'
+const topChromeWidth = computed(() => {
+  if (collapseEditorInputs.value) {
+    return 'calc(100vw - 24px)'
   }
-  return `min(40rem, calc((1 - ${activeSplitRatio.value}) * 100vw - 24px))`
+  const previewPercent = Math.max(0, Math.min(100, (1 - activeSplitRatio.value) * 100))
+  return `calc(${previewPercent.toFixed(4)}vw - ${PROJECT_TOP_CHROME_LEFT_PX + PROJECT_TOP_CHROME_END_GAP_PX + EDITOR_SPLIT_DIVIDER_WIDTH_PX}px)`
 })
 const mobileActionTop = computed(() => isMobileViewport.value ? '7rem' : '4rem')
 const canvasChromeTeleportSelector = computed(() =>
@@ -642,13 +713,15 @@ const canvasChromeTeleportSelector = computed(() =>
 </script>
 
 <template>
-  <div class="project-page relative h-[100dvh] min-h-0 w-full">
+  <div
+    class="project-page relative h-[100dvh] min-h-0 w-full"
+  >
       <div
         v-if="project && viewMode === 'cutlist' && !cutlistWipConfirmed"
         class="fixed inset-0 z-[9999] flex h-[100dvh] w-screen cursor-pointer items-center justify-center overflow-hidden px-6 py-6 sm:px-8 sm:py-8"
         role="button"
         tabindex="0"
-        aria-label="Dismiss cutlist work-in-progress warning"
+        :aria-label="t('cutlistWarningDismiss')"
         @click="confirmCutlistWipAlert"
         @keydown.enter.prevent="confirmCutlistWipAlert"
         @keydown.space.prevent="confirmCutlistWipAlert"
@@ -660,14 +733,14 @@ const canvasChromeTeleportSelector = computed(() =>
           draggable="false"
         >
         <p class="pointer-events-none absolute left-1/2 top-[calc(50%+((100dvh-4rem)*0.13))] w-[calc((100dvh-3rem)*0.6)] -translate-x-1/2 -translate-y-1/2 text-balance text-center font-black leading-tight text-black [font-size:calc((100dvh-4rem)*0.021)]">
-          This part of the app is still a work in progress and has not been tested in real-world builds. Cutlists, measurements, and operations may (and will) contain errors. You are responsible for verifying everything before manufacturing or assembly. Use at your own risk. If you end up building something, I’d love to see it (dms open on x)
+          {{ t('cutlistWarningText') }}
         </p>
       </div>
       <button
         v-else-if="project && viewMode === 'cutlist'"
         type="button"
         class="fixed bottom-3 left-3 z-50 size-14 transition-transform hover:scale-105 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:bottom-4 sm:left-4 sm:size-16"
-        aria-label="Show cutlist work-in-progress warning"
+        :aria-label="t('cutlistWarningShow')"
         @click="showCutlistWipAlert"
       >
         <img
@@ -682,10 +755,9 @@ const canvasChromeTeleportSelector = computed(() =>
         :split-ratio="activeSplitRatio"
         :divider-locked="viewMode === 'cutlist'"
         :collapse-inputs="collapseEditorInputs"
-        :hide-divider="styleTabFlag && viewMode === 'style'"
-        :inputs-basis="styleTabFlag && viewMode === 'style' && !isMobileViewport ? '20rem' : ''"
+        :min-inputs-px="DESKTOP_SIDEBAR_MIN_WIDTH_PX"
+        :divider-size-px="EDITOR_SPLIT_DIVIDER_WIDTH_PX"
         :reverse-on-mobile-stack="true"
-        :reverse-on-desktop="styleTabFlag && viewMode === 'style'"
         @update:split-ratio="onSplitRatioUpdate"
       >
         <!-- Inputs (left) pane -->
@@ -696,6 +768,7 @@ const canvasChromeTeleportSelector = computed(() =>
           <LazyProjectDesigner
             v-if="!userNeedsEmailVerification && viewMode === 'assembly' && docRef"
             :ydoc="(docRef as any)"
+            :public-style="publicStyle"
             :selected-modules="selectedModules"
             :zoom-percent="zoomPercent"
             class="min-h-0 flex-1"
@@ -734,6 +807,34 @@ const canvasChromeTeleportSelector = computed(() =>
               name="i-lucide-loader-circle"
               class="size-8 animate-spin text-muted"
             />
+          </div>
+
+          <div
+            v-else-if="projectLoadError"
+            class="flex h-full flex-col items-center justify-center gap-4 px-6"
+          >
+            <UAlert
+              color="error"
+              variant="soft"
+              :title="t('projectLoadErrorTitle')"
+              :description="projectLoadError"
+              class="w-full max-w-lg"
+            />
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <UButton
+                v-if="corruptProjectUpdate"
+                icon="i-lucide-download"
+                color="neutral"
+                variant="outline"
+                :label="t('downloadRecoveryData')"
+                @click="downloadCorruptProjectData"
+              />
+              <UButton
+                to="/"
+                icon="i-lucide-arrow-left"
+                :label="t('backToProjects')"
+              />
+            </div>
           </div>
 
           <template v-else-if="project">
@@ -780,6 +881,10 @@ const canvasChromeTeleportSelector = computed(() =>
                   :ydoc="(docRef as any)"
                   class="h-full min-h-0 w-full"
                 />
+                <ProductPill
+                  v-if="docRef"
+                  @restart="onPillRestart"
+                />
               </div>
             </Suspense>
           </template>
@@ -789,11 +894,11 @@ const canvasChromeTeleportSelector = computed(() =>
             class="flex h-full flex-col items-center justify-center gap-4 px-4"
           >
             <p class="text-pretty text-center text-muted">
-              Project not found.
+              {{ t('projectNotFound') }}
             </p>
             <UButton
               to="/"
-              label="Back to projects"
+              :label="t('backToProjects')"
               class="transition-transform active:scale-[0.97]"
             />
             </div>
@@ -804,9 +909,9 @@ const canvasChromeTeleportSelector = computed(() =>
       <div
         v-if="project"
         class="project-top-chrome pointer-events-none fixed inset-x-3 top-3 z-30 flex flex-wrap items-start gap-2 md:inset-x-auto md:left-4 md:top-4 md:flex-nowrap md:gap-2.5"
-        :style="{ '--project-top-chrome-max-width': topChromeMaxWidth }"
+        :style="{ '--project-top-chrome-width': topChromeWidth }"
       >
-        <div class="pointer-events-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-2 shadow-sm sm:gap-2.5 sm:px-3 md:max-w-[min(20rem,calc(100vw-6rem))]">
+        <div class="project-title-pill pointer-events-auto flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-2 shadow-sm sm:gap-2.5 sm:px-3">
           <UButton
             to="/"
             variant="ghost"
@@ -814,7 +919,7 @@ const canvasChromeTeleportSelector = computed(() =>
             icon="i-lucide-arrow-left"
             size="sm"
             class="shrink-0 text-muted opacity-55 transition-[opacity,color,transform] hover:bg-transparent hover:text-highlighted hover:opacity-100 active:scale-[0.97]"
-            aria-label="Home"
+            :aria-label="t('home')"
           />
           <div class="project-title-row flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
             <h1 class="project-title block min-w-0 truncate whitespace-nowrap text-sm font-semibold text-highlighted sm:text-base">
@@ -827,24 +932,24 @@ const canvasChromeTeleportSelector = computed(() =>
               <button
                 type="button"
                 class="public-badge group inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-elevated px-2 text-[11px] font-medium leading-none text-toned ring-1 ring-default/40 transition-[color,background-color,transform] hover:bg-accented hover:text-highlighted active:scale-[0.97]"
-                aria-label="This project is the public copy. Click for options."
+                :aria-label="t('publicCopyAria')"
               >
                 <span
                   class="size-1.5 rounded-full bg-warning transition-transform group-hover:scale-110"
                   aria-hidden="true"
                 />
-                <span class="public-badge-label">Public</span>
+                <span class="public-badge-label">{{ t('public') }}</span>
               </button>
               <template #content>
                 <div class="flex max-w-xs flex-col gap-3 p-3">
                   <p class="text-pretty text-sm text-default">
-                    You're editing the <span class="font-medium text-highlighted">public copy</span>. Changes here are visible to everyone.
+                    {{ t('publicCopyNotice') }}
                   </p>
                   <UButton
                     size="sm"
                     color="primary"
                     variant="soft"
-                    label="Make a local copy"
+                    :label="t('makeLocalCopy')"
                     icon="i-lucide-copy-plus"
                     block
                     class="transition-transform active:scale-[0.97]"
@@ -864,7 +969,7 @@ const canvasChromeTeleportSelector = computed(() =>
                 color="neutral"
                 size="sm"
                 class="shrink-0 text-muted opacity-55 transition-[opacity,color,transform] hover:bg-transparent hover:text-highlighted hover:opacity-100 active:scale-[0.97]"
-                aria-label="Project menu"
+                :aria-label="t('projectMenu')"
               />
             </UDropdownMenu>
           </div>
@@ -892,26 +997,26 @@ const canvasChromeTeleportSelector = computed(() =>
             size="xs"
             :variant="viewMode === 'assembly' ? 'solid' : 'ghost'"
             color="neutral"
-            label="Design"
+            :label="t('design')"
             class="h-8 rounded-full transition-transform active:scale-[0.97]"
             @click="viewMode = 'assembly'"
-          />
-          <UButton
-            size="xs"
-            :variant="viewMode === 'cutlist' ? 'solid' : 'ghost'"
-            color="neutral"
-            label="Cutlist"
-            class="h-8 rounded-full transition-transform active:scale-[0.97]"
-            @click="viewMode = 'cutlist'"
           />
           <UButton
             v-if="styleTabFlag"
             size="xs"
             :variant="viewMode === 'style' ? 'solid' : 'ghost'"
             color="neutral"
-            label="Style"
+            :label="t('style')"
             class="h-8 rounded-full transition-transform active:scale-[0.97]"
             @click="viewMode = 'style'"
+          />
+          <UButton
+            size="xs"
+            :variant="viewMode === 'cutlist' ? 'solid' : 'ghost'"
+            color="neutral"
+            :label="t('cutlist')"
+            class="h-8 rounded-full transition-transform active:scale-[0.97]"
+            @click="viewMode = 'cutlist'"
           />
         </div>
 
@@ -947,6 +1052,14 @@ const canvasChromeTeleportSelector = computed(() =>
           </div>
         </div>
         <UAlert
+          v-if="recoveryNotice"
+          color="warning"
+          variant="soft"
+          :title="t('projectRecoveredTitle')"
+          :description="recoveryNotice"
+          class="pointer-events-auto max-w-md"
+        />
+        <UAlert
           v-if="demoToggleError"
           color="error"
           variant="soft"
@@ -967,7 +1080,7 @@ const canvasChromeTeleportSelector = computed(() =>
             color="neutral"
             icon="i-lucide-arrow-left"
             size="sm"
-            label="Back to projects"
+            :label="t('backToProjects')"
             class="transition-transform active:scale-[0.97]"
           />
         </div>
@@ -977,18 +1090,18 @@ const canvasChromeTeleportSelector = computed(() =>
       <LazyAppFormDialog
         v-if="project && renameOpen"
         v-model:open="renameOpen"
-        title="Change name"
-        primary-label="Save"
+        :title="t('changeName')"
+        :primary-label="t('save')"
         @primary="confirmRename"
       >
         <UFormField
-          label="Name"
+          :label="t('name')"
           class="w-full"
         >
           <UInput
             v-model="renameValue"
             class="w-full"
-            placeholder="Project name"
+            :placeholder="t('projectName')"
             autofocus
             @keydown.enter.prevent="confirmRename"
           />
@@ -998,10 +1111,10 @@ const canvasChromeTeleportSelector = computed(() =>
       <LazyAppConfirmDialog
         v-if="project && deleteOpen"
         v-model:open="deleteOpen"
-        title="Delete project?"
+        :title="t('deleteProjectTitle')"
         :message="deleteDialogMessage"
-        cancel-label="Cancel"
-        confirm-label="Delete"
+        :cancel-label="t('cancel')"
+        :confirm-label="t('delete')"
         @confirm="confirmDelete"
       />
   </div>
@@ -1065,13 +1178,30 @@ const canvasChromeTeleportSelector = computed(() =>
 
 @media (min-width: 768px) {
   .project-top-chrome {
-    width: var(--project-top-chrome-max-width);
-    max-width: var(--project-top-chrome-max-width);
+    display: grid;
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(0, 1fr);
+    align-items: start;
+    width: var(--project-top-chrome-width);
+    max-width: var(--project-top-chrome-width);
   }
 
-  .project-top-chrome > :first-child {
-    flex: 1 1 auto;
-    max-width: none;
+  .project-title-pill {
+    grid-column: 1;
+    justify-self: start;
+    flex: 0 1 auto;
+    width: fit-content;
+    max-width: min(20rem, calc(var(--project-top-chrome-width) - 10.75rem));
+  }
+
+  .project-view-tabs {
+    grid-column: 2;
+    justify-self: center;
+  }
+
+  .project-title-row {
+    container-type: normal;
+    flex: 0 1 auto;
+    width: max-content;
   }
 
   .public-badge-label {

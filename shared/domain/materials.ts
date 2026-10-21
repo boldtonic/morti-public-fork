@@ -33,14 +33,16 @@ export interface MaterialPreset {
 export const CUSTOM_MATERIAL_ID = 'custom'
 
 export const MATERIAL_PRESETS: MaterialPreset[] = [
-  { id: 'white-oak',        label: 'White Oak — Natural', category: 'Solid wood', sheenLabel: 'Satin oil',     hex: '#c8a877', roughness: 0.62, metalness: 0.05, grain: 'oak',              sheen: 'satin' },
-  { id: 'walnut-oiled',     label: 'Walnut — Oiled',      category: 'Solid wood', sheenLabel: 'Hand-rubbed',   hex: '#5b3e2b', roughness: 0.55, metalness: 0.06, grain: 'walnut',           sheen: 'satin' },
-  { id: 'hard-maple',       label: 'Hard Maple',          category: 'Solid wood', sheenLabel: 'Satin lacquer', hex: '#e6cfa8', roughness: 0.45, metalness: 0.05, grain: 'maple',            sheen: 'satin' },
-  { id: 'cherry-aged',      label: 'Cherry — Aged',       category: 'Solid wood', sheenLabel: 'Warm satin',    hex: '#8a4a32', roughness: 0.40, metalness: 0.06, grain: 'cherry',           sheen: 'satin' },
-  { id: 'baltic-birch',     label: 'Baltic Birch Ply',    category: 'Engineered', sheenLabel: 'Light wax',     hex: '#dcc18a', roughness: 0.50, metalness: 0.04, grain: 'birch',            sheen: 'satin' },
-  { id: 'ebonized-oak',     label: 'Ebonized Oak',        category: 'Treated',    sheenLabel: 'Open pore',     hex: '#1f1a17', roughness: 0.58, metalness: 0.06, grain: 'ebonized',         sheen: 'matte' },
-  { id: 'white-lacquer',    label: 'White Lacquer',       category: 'Painted',    sheenLabel: 'Semi-gloss',    hex: '#efece6', roughness: 0.18, metalness: 0.02, grain: 'lacquer-white',    sheen: 'semigloss' },
-  { id: 'charcoal-lacquer', label: 'Charcoal Lacquer',    category: 'Painted',    sheenLabel: 'Semi-gloss',    hex: '#2a2826', roughness: 0.22, metalness: 0.04, grain: 'lacquer-charcoal', sheen: 'semigloss' },
+  { id: 'white-oak',          label: 'White Oak — Natural', category: 'Solid wood', sheenLabel: 'Satin oil',     hex: '#c8a877', roughness: 0.62, metalness: 0.05, grain: 'oak',              sheen: 'satin' },
+  { id: 'walnut-oiled',       label: 'Walnut — Oiled',      category: 'Solid wood', sheenLabel: 'Hand-rubbed',   hex: '#5b3e2b', roughness: 0.55, metalness: 0.06, grain: 'walnut',           sheen: 'satin' },
+  { id: 'hard-maple',         label: 'Hard Maple',          category: 'Solid wood', sheenLabel: 'Satin lacquer', hex: '#e6cfa8', roughness: 0.45, metalness: 0.05, grain: 'maple',            sheen: 'satin' },
+  { id: 'cherry-aged',        label: 'Cherry — Aged',       category: 'Solid wood', sheenLabel: 'Warm satin',    hex: '#8a4a32', roughness: 0.40, metalness: 0.06, grain: 'cherry',           sheen: 'satin' },
+  { id: 'baltic-birch',       label: 'Baltic Birch Ply',    category: 'Engineered', sheenLabel: 'Light wax',     hex: '#dcc18a', roughness: 0.50, metalness: 0.04, grain: 'birch',            sheen: 'satin' },
+  { id: 'ebonized-oak',       label: 'Ebonized Oak',        category: 'Treated',    sheenLabel: 'Open pore',     hex: '#1f1a17', roughness: 0.58, metalness: 0.06, grain: 'ebonized',         sheen: 'matte' },
+  { id: 'white-lacquer',      label: 'Soft White Lacquer',  category: 'Painted',    sheenLabel: 'Semi-gloss',    hex: '#f4f3ef', roughness: 0.20, metalness: 0.02, grain: 'lacquer-white',    sheen: 'semigloss' },
+  { id: 'soft-gray-lacquer',  label: 'Soft Gray Lacquer',   category: 'Painted',    sheenLabel: 'Satin lacquer', hex: '#d8d9dc', roughness: 0.24, metalness: 0.02, grain: 'lacquer-white',    sheen: 'satin' },
+  { id: 'graphite-lacquer',   label: 'Graphite Lacquer',    category: 'Painted',    sheenLabel: 'Satin lacquer', hex: '#2b2b2f', roughness: 0.28, metalness: 0.03, grain: 'lacquer-charcoal', sheen: 'satin' },
+  { id: 'charcoal-lacquer',   label: 'Charcoal Lacquer',    category: 'Painted',    sheenLabel: 'Semi-gloss',    hex: '#2b2b2f', roughness: 0.22, metalness: 0.04, grain: 'lacquer-charcoal', sheen: 'semigloss' },
 ]
 
 export const MATERIAL_CATEGORY_ORDER: MaterialCategory[] = [
@@ -59,14 +61,13 @@ export const CABINET_PARTS: { key: CabinetPart, label: string, hint: string }[] 
   { key: 'fronts',  label: 'Fronts',  hint: 'Doors and drawer faces' },
 ]
 
-/** Default per-part assignment. Initial state matches the original Morti
- *  debug palette (gray/blue/green/yellow) via `custom` hex overrides — users
- *  see the familiar baseline until they pick a real wood preset. */
+/** Default per-part assignment. Fresh projects should feel like a finished,
+ *  premium furniture piece rather than a technical prototype. */
 export const DEFAULT_MATERIAL_ASSIGNMENTS: Record<CabinetPart, { presetId: string, customColor: string }> = {
-  carcass: { presetId: CUSTOM_MATERIAL_ID, customColor: '#aaaaaa' },
-  sides:   { presetId: CUSTOM_MATERIAL_ID, customColor: '#2d8ed1' },
-  deck:    { presetId: CUSTOM_MATERIAL_ID, customColor: '#26bf67' },
-  fronts:  { presetId: CUSTOM_MATERIAL_ID, customColor: '#ffc21c' },
+  carcass: { presetId: 'white-lacquer', customColor: '#f4f3ef' },
+  sides:   { presetId: 'white-lacquer', customColor: '#f4f3ef' },
+  deck:    { presetId: 'white-lacquer', customColor: '#f4f3ef' },
+  fronts:  { presetId: 'soft-gray-lacquer', customColor: '#d8d9dc' },
 }
 
 export function findPreset(id: string | null | undefined): MaterialPreset | null {
@@ -93,8 +94,8 @@ export interface ResolvedMaterial {
 }
 
 /** Verbatim Morti baseline (Dt_x5Iy5.js panel material defaults).
- *  Custom and unknown presets render at this PBR setting so a fresh project
- *  with the legacy debug palette looks identical to pre-material-picker builds. */
+ *  Custom and unknown presets keep this PBR setting so older projects with
+ *  custom debug colors remain visually stable. */
 const BASELINE_ROUGHNESS = 0.62
 const BASELINE_METALNESS = 0.08
 
@@ -211,7 +212,7 @@ export function sheenOverlay(sheen: MaterialSheen): string {
   return SHEEN_RECIPES[sheen]
 }
 
-/** Custom card uses a conic of the warm wood-tone palette so it reads as
- *  "anything goes" without screaming rainbow. */
+/** Custom card uses a restrained mix of white, graphite, and oak accent so it
+ *  reads as "anything goes" without screaming rainbow. */
 export const CUSTOM_GRADIENT =
-  'conic-gradient(from 210deg at 50% 50%, #c8a877, #b65a3a, #7a3a26, #2a2925, #dcc18a, #c8a877)'
+  'conic-gradient(from 210deg at 50% 50%, #f4f3ef, #d8d9dc, #2b2b2f, #9a7a50, #c8a877, #f4f3ef)'

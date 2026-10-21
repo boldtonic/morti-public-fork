@@ -11,6 +11,8 @@ import type {
   PanelOperation,
   PanelRole,
 } from '~~/shared/domain/types'
+import { moduleHandleHorizontalPosition, moduleHasHandleHoles } from '~~/shared/domain/handles'
+import { interiorShelfCenterOffsets } from '~~/shared/domain/interior-shelves'
 
 // ---------------------------------------------------------------------------
 // Tunables (mirrors Dt_x5Iy5.js module-level constants)
@@ -325,11 +327,12 @@ function backPanelGrooveDepth(config: FurnitureConfig): number {
 
 function makeVerticalSide(boundaryIndex: number, x: number, height: number, config: FurnitureConfig, touchedModuleIds: string[]): CompiledPanel {
   const overhang = config.sidePanelOverhang
+  const deckThickness = config.panelThickness
   return makePanel({
     key: `vertical:boundary:${boundaryIndex}`,
     role: 'vertical-side',
     position: { x, y: height / 2, z: 0 },
-    size: { width: config.depth, height: height + 2 * overhang, thickness: config.panelThickness },
+    size: { width: config.depth, height: height + deckThickness + 2 * overhang, thickness: config.panelThickness },
     orientation: 'vertical-yz',
     touchedModuleIds,
   })
@@ -354,6 +357,28 @@ function makeHorizontalDeck(
     orientation: 'horizontal-xz',
     touchedModuleIds,
   })
+}
+
+function compileInteriorShelves(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
+  const panels: CompiledPanel[] = []
+  const centerX = (cell.xMin + cell.xMax) / 2
+  const moduleBaseY = cell.yMin - config.panelThickness / 2 - config.panelJointClearance
+  const depth = config.depth + config.sidePanelOverhang / 2
+  const centerZ = config.sidePanelOverhang / 4
+
+  for (const [index, offsetY] of interiorShelfCenterOffsets(module.height, module.shelfCount, config).entries()) {
+    panels.push(makePanel({
+      key: `interior-shelf:${module.id}:${index}`,
+      role: 'horizontal-deck',
+      sourceModuleId: module.id,
+      position: { x: centerX, y: moduleBaseY + offsetY, z: centerZ },
+      size: { width: cell.width, height: depth, thickness: config.panelThickness },
+      orientation: 'horizontal-xz',
+      touchedModuleIds: [module.id],
+    }))
+  }
+
+  return { panels, operations: [] as PanelOperation[] }
 }
 
 function makeBackPanel(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig): CompiledPanel {
@@ -478,16 +503,36 @@ function compileDoorOrFrontPanels(module: FurnitureModule, cell: CompiledCellBou
   const diameter = config.pullHoleDiameter
   const inset = config.pullHoleEdgeInset
 
-  function singleDoorPull(panel: CompiledPanel, hinge: 'left' | 'right') {
-    const x = hinge === 'left' ? panel.width / 2 - inset : -panel.width / 2 + inset
-    const y = panel.height / 2 - inset
+  function handleCenterY(panelHeight: number, pairReserve = 0) {
+    const edgeInset = Math.max(inset, diameter / 2)
+    const min = -panelHeight / 2 + edgeInset + pairReserve
+    const max = panelHeight / 2 - edgeInset - pairReserve
+    if (module.handlePosition === 'center') return Math.max(min, Math.min(max, 0))
+    return module.handlePosition === 'bottom' ? min : max
+  }
+
+  function horizontalPullCenter(panelWidth: number, pairReserve = 0) {
+    const edgeInset = Math.max(inset, diameter / 2)
+    const min = -panelWidth / 2 + edgeInset + pairReserve
+    const max = panelWidth / 2 - edgeInset - pairReserve
+    const horizontalPosition = moduleHandleHorizontalPosition(module)
+    if (horizontalPosition === 'center') return Math.max(min, Math.min(max, 0))
+    return horizontalPosition === 'left' ? min : max
+  }
+
+  function singleDoorPull(panel: CompiledPanel) {
+    const x = horizontalPullCenter(panel.width)
+    const y = handleCenterY(panel.height)
     return { x, y }
   }
 
   function pairedDoorPull(panel: CompiledPanel, side: 'left' | 'right') {
+    const horizontalPosition = moduleHandleHorizontalPosition(module)
     const xFromCenter = panel.width / 2 + frontClearance - config.pullHolePairGap / 2
-    const x = side === 'left' ? xFromCenter : -xFromCenter
-    const y = panel.height / 2 - inset
+    const x = horizontalPosition === 'center'
+      ? side === 'left' ? xFromCenter : -xFromCenter
+      : horizontalPullCenter(panel.width)
+    const y = handleCenterY(panel.height)
     return { x, y }
   }
 
@@ -504,7 +549,9 @@ function compileDoorOrFrontPanels(module: FurnitureModule, cell: CompiledCellBou
       orientation: 'vertical-xy',
     })
     panels.push(panel)
-    operations.push(makePullHole(panel, singleDoorPull(panel, hinge), diameter, 'a'))
+    if (moduleHasHandleHoles(module)) {
+      operations.push(makePullHole(panel, singleDoorPull(panel), diameter, 'a'))
+    }
     return { panels, operations }
   }
 
@@ -531,8 +578,10 @@ function compileDoorOrFrontPanels(module: FurnitureModule, cell: CompiledCellBou
       orientation: 'vertical-xy',
     })
     panels.push(left, right)
-    operations.push(makePullHole(left, pairedDoorPull(left, 'left'), diameter, 'a'))
-    operations.push(makePullHole(right, pairedDoorPull(right, 'right'), diameter, 'a'))
+    if (moduleHasHandleHoles(module)) {
+      operations.push(makePullHole(left, pairedDoorPull(left, 'left'), diameter, 'a'))
+      operations.push(makePullHole(right, pairedDoorPull(right, 'right'), diameter, 'a'))
+    }
   }
 
   return { panels, operations }
@@ -581,11 +630,31 @@ function compileDrawer(module: FurnitureModule, cell: CompiledCellBounds, config
       orientation: 'vertical-xy',
     })
     panels.push(front)
-    const pullY = frontHeight / 2 - config.pullHoleEdgeInset
-    operations.push(
-      makePullHole(front, { x: -config.pullHolePairGap / 2, y: pullY }, config.pullHoleDiameter, 'left'),
-      makePullHole(front, { x: config.pullHolePairGap / 2, y: pullY }, config.pullHoleDiameter, 'right'),
-    )
+    if (moduleHasHandleHoles(module)) {
+      const halfGap = config.pullHolePairGap / 2
+      const edgeInset = Math.max(config.pullHoleEdgeInset, config.pullHoleDiameter / 2)
+      const orientation = module.handleOrientation ?? 'horizontal'
+      const verticalReserve = orientation === 'vertical' ? halfGap : 0
+      const minY = -frontHeight / 2 + edgeInset + verticalReserve
+      const maxY = frontHeight / 2 - edgeInset - verticalReserve
+      const pullY = module.handlePosition === 'center'
+        ? Math.max(minY, Math.min(maxY, 0))
+        : module.handlePosition === 'bottom' ? minY : maxY
+      const horizontalReserve = orientation === 'horizontal' ? halfGap : 0
+      const minX = -front.width / 2 + edgeInset + horizontalReserve
+      const maxX = front.width / 2 - edgeInset - horizontalReserve
+      const horizontalPosition = moduleHandleHorizontalPosition(module)
+      const pullX = horizontalPosition === 'center'
+        ? Math.max(minX, Math.min(maxX, 0))
+        : horizontalPosition === 'left' ? minX : maxX
+      const centers = orientation === 'vertical'
+        ? [{ x: pullX, y: pullY - halfGap }, { x: pullX, y: pullY + halfGap }]
+        : [{ x: pullX - halfGap, y: pullY }, { x: pullX + halfGap, y: pullY }]
+      operations.push(
+        makePullHole(front, centers[0]!, config.pullHoleDiameter, 'left'),
+        makePullHole(front, centers[1]!, config.pullHoleDiameter, 'right'),
+      )
+    }
 
     const leftSide = makePanel({
       key: `drawer-side:${module.id}:${drawerIndex}:left`,
@@ -632,7 +701,7 @@ function compileDrawer(module: FurnitureModule, cell: CompiledCellBounds, config
 }
 
 function compileModule(module: FurnitureModule, cell: CompiledCellBounds, config: FurnitureConfig) {
-  if (module.type === 'shelf') return { panels: [] as CompiledPanel[], operations: [] as PanelOperation[] }
+  if (module.type === 'shelf') return compileInteriorShelves(module, cell, config)
   if (module.type === 'drawer') return compileDrawer(module, cell, config)
   return compileDoorOrFrontPanels(module, cell, config)
 }
@@ -753,7 +822,7 @@ export function compileAssembly(furnitureDoc: FurnitureDoc, _opts: CompileOption
     }
   }
 
-  const normalizedPanels = panels.map(panel => normalizePanel(panel, config.sidePanelOverhang))
+  const normalizedPanels = panels.map(panel => normalizePanel(panel, config.sidePanelOverhang + config.panelThickness / 2))
   const normalizedOperations = operations.map(normalizeOperation)
   const normalizedPanelMap = new Map(normalizedPanels.map(panel => [panel.key, panel]))
   for (const operation of normalizedOperations) {

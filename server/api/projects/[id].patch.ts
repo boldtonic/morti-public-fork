@@ -19,7 +19,6 @@ export default defineEventHandler(async (event) => {
   if (row.owner_id !== user.id) throw createError({ statusCode: 403, statusMessage: 'You do not have access to this project.' })
 
   const body = await readBody<Record<string, unknown>>(event)
-  const patch: Record<string, unknown> = {}
   const sets: string[] = []
   const values: unknown[] = []
 
@@ -48,15 +47,7 @@ export default defineEventHandler(async (event) => {
     if (!user.is_admin) throw createError({ statusCode: 403, statusMessage: 'Admin access is required.' })
     add('is_demo', body.is_demo === true)
   }
-  if ('remix_count_delta' in body) {
-    const delta = Number(body.remix_count_delta)
-    if (Number.isFinite(delta) && delta !== 0) {
-      patch.remixDelta = delta
-    }
-  }
-
-  if (sets.length === 0 && !patch.remixDelta) return projectRecordFromRow(row)
-  if (patch.remixDelta) sets.push(`remix_count = remix_count + ${Number(patch.remixDelta) > 0 ? 1 : -1}`)
+  if (sets.length === 0) return projectRecordFromRow(row)
   sets.push('updated_at = now()')
   values.push(id)
 

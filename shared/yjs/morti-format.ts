@@ -14,6 +14,26 @@ export interface MortiEnvelope {
   yjsUpdateBase64: string
 }
 
+export type MortiImportErrorCode
+  = | 'FILE_TOO_LARGE'
+    | 'INVALID_JSON'
+    | 'INVALID_ENVELOPE'
+    | 'UNSUPPORTED_FORMAT_VERSION'
+    | 'UNSUPPORTED_DESIGN_SCHEMA_VERSION'
+    | 'INVALID_BASE64'
+    | 'INVALID_YJS_UPDATE'
+
+export class MortiImportError extends Error {
+  constructor(
+    readonly code: MortiImportErrorCode,
+    message: string,
+    cause?: unknown,
+  ) {
+    super(message, { cause })
+    this.name = 'MortiImportError'
+  }
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let s = ''
   for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i])
@@ -21,10 +41,81 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64)
+  const normalized = b64.replace(/\s/g, '')
+  const validBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+  if (!normalized || !validBase64.test(normalized)) {
+    throw new MortiImportError('INVALID_BASE64', 'Invalid .morti file: yjsUpdateBase64 is not valid base64.')
+  }
+
+  let bin: string
+  try {
+    bin = atob(normalized)
+  }
+  catch (error) {
+    throw new MortiImportError('INVALID_BASE64', 'Invalid .morti file: yjsUpdateBase64 is not valid base64.', error)
+  }
   const out = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
   return out
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isVersion(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
+function parseEnvelope(value: unknown): MortiEnvelope {
+  if (!isRecord(value)
+    || !isVersion(value.formatVersion)
+    || !isVersion(value.designSchemaVersion)
+    || !isVersion(value.assemblyCompilerVersion)
+    || !isVersion(value.technicalRendererVersion)
+    || typeof value.exportedAt !== 'string'
+    || typeof value.yjsUpdateBase64 !== 'string') {
+    throw new MortiImportError('INVALID_ENVELOPE', 'Invalid .morti file: the JSON envelope is incomplete or malformed.')
+  }
+  if (value.formatVersion > MORTI_FORMAT_VERSION) {
+    throw new MortiImportError(
+      'UNSUPPORTED_FORMAT_VERSION',
+      `Unsupported .morti format version ${value.formatVersion}; this app supports up to version ${MORTI_FORMAT_VERSION}.`,
+    )
+  }
+  if (value.designSchemaVersion > DESIGN_SCHEMA_VERSION) {
+    throw new MortiImportError(
+      'UNSUPPORTED_DESIGN_SCHEMA_VERSION',
+      `Unsupported design schema version ${value.designSchemaVersion}; this app supports up to version ${DESIGN_SCHEMA_VERSION}.`,
+    )
+  }
+  return value as unknown as MortiEnvelope
+}
+
+function applyImportedUpdate(bytes: Uint8Array, source: 'envelope' | 'legacy'): Y.Doc {
+  const doc = new Y.Doc()
+  try {
+    Y.applyUpdate(doc, bytes)
+    const embeddedSchemaVersion = doc.getMap('furniture').get('schemaVersion')
+    if (typeof embeddedSchemaVersion === 'number' && embeddedSchemaVersion > DESIGN_SCHEMA_VERSION) {
+      throw new MortiImportError(
+        'UNSUPPORTED_DESIGN_SCHEMA_VERSION',
+        `Unsupported design schema version ${embeddedSchemaVersion}; this app supports up to version ${DESIGN_SCHEMA_VERSION}.`,
+      )
+    }
+    ensureInitialized(doc)
+    return doc
+  }
+  catch (error) {
+    doc.destroy()
+    if (error instanceof MortiImportError) throw error
+    const description = source === 'envelope' ? 'embedded' : 'legacy raw'
+    throw new MortiImportError(
+      'INVALID_YJS_UPDATE',
+      `Invalid .morti file: the ${description} Yjs update is corrupt.`,
+      error,
+    )
+  }
 }
 
 export function exportDoc(doc: Y.Doc): Blob {
@@ -41,24 +132,25 @@ export function exportDoc(doc: Y.Doc): Blob {
 }
 
 export async function importDocFromBlob(blob: Blob): Promise<Y.Doc> {
-  if (blob.size > MORTI_MAX_BYTES) throw new Error('File too large.')
+  if (blob.size > MORTI_MAX_BYTES) {
+    throw new MortiImportError('FILE_TOO_LARGE', `Invalid .morti file: files larger than ${MORTI_MAX_BYTES} bytes are not supported.`)
+  }
   const buf = await blob.arrayBuffer()
   const bytes = new Uint8Array(buf)
-  const doc = new Y.Doc()
-  // Try JSON envelope first
+  const text = new TextDecoder().decode(bytes)
+  const trimmedText = text.trimStart()
+
+  let parsed: unknown
   try {
-    const text = new TextDecoder().decode(bytes)
-    const env = JSON.parse(text) as MortiEnvelope
-    if (env && typeof env.yjsUpdateBase64 === 'string') {
-      Y.applyUpdate(doc, base64ToBytes(env.yjsUpdateBase64))
-      ensureInitialized(doc)
-      return doc
+    parsed = JSON.parse(text)
+  }
+  catch (error) {
+    if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
+      throw new MortiImportError('INVALID_JSON', 'Invalid .morti file: the JSON envelope cannot be parsed.', error)
     }
+    return applyImportedUpdate(bytes, 'legacy')
   }
-  catch {
-    // fall through to raw v1 update
-  }
-  Y.applyUpdate(doc, bytes)
-  ensureInitialized(doc)
-  return doc
+
+  const env = parseEnvelope(parsed)
+  return applyImportedUpdate(base64ToBytes(env.yjsUpdateBase64), 'envelope')
 }

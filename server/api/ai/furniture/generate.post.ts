@@ -203,13 +203,14 @@ function compactCurrentDesign(current: FurnitureDoc): string {
         t: compactModuleType(module.type),
         h: module.height,
         ...(module.type === 'drawer' ? { n: module.drawerCount ?? 1 } : {}),
+        ...(module.type === 'shelf' && module.shelfCount ? { q: module.shelfCount } : {}),
       })),
     })),
   })
 }
 
 function furnitureInstructions(): string {
-  return 'Return JSON only: {c:[{w,m:[{t,h,n?}]}],g?,s?,w?}. Units meters. t=s shelf,d drawer,D paired doors,l left door,r right door. Modules are bottom-to-top. Use one d+n for a drawer bank. Fit requested width/height; practical cabinet/storage only; 1-8 cols; 1-12 modules/col. g keys: d depth,pt panel,bt back,fc front gap,so side overhang,pd pull diameter,pe pull inset,pg pull gap.'
+  return 'Return JSON only: {c:[{w,m:[{t,h,n?,q?}]}],g?,s?,w?}. Units meters. t=s shelf,d drawer,D paired doors,l left door,r right door. Modules are bottom-to-top. Use one d+n for a drawer bank; q is the number of interior shelves in an open shelf module. Fit requested width/height; practical cabinet/storage only; 1-8 cols; 1-12 modules/col. g keys: d depth,pt panel,bt back,fc front gap,so side overhang,pd pull diameter,pe pull inset,pg pull gap.'
 }
 
 function makeInput(prompt: string, current: FurnitureDoc, repairError?: string, badOutput?: unknown): string {

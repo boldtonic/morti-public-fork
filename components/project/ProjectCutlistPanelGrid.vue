@@ -6,7 +6,8 @@ import {
   panelCutlistSignature,
   panelGroupIds,
 } from '~~/shared/domain/cutlist'
-import type { CompiledPanel, FurnitureDoc, PanelOperation, PanelRole } from '~~/shared/domain/types'
+import type { CompiledPanel, FurnitureDoc, PanelOperation } from '~~/shared/domain/types'
+import { panelRoleText, uiText as t } from '~~/shared/i18n/ui-copy'
 import { readFurnitureDoc } from '~~/shared/yjs/doc'
 
 const PanelSvgPreview = defineAsyncComponent(() => import('~~/components/project/PanelSvgPreview.vue'))
@@ -147,8 +148,8 @@ function stopSelectedCanvasClick(group: PanelGroup, event: MouseEvent) {
   if (isSelectedGroup(group)) event.stopPropagation()
 }
 
-function formatMm(value: number): string {
-  return (value * 1000).toFixed(0)
+function formatCentimeters(value: number): string {
+  return (Math.round(value * 1000) / 10).toFixed(1).replace(/\.0$/, '')
 }
 </script>
 
@@ -161,7 +162,7 @@ function formatMm(value: number): string {
       v-if="panelGroups.length === 0"
       class="flex h-full items-center justify-center text-sm text-muted"
     >
-      No panels yet
+      {{ t('noPanelsYet') }}
     </div>
     <div
       v-else
@@ -211,10 +212,10 @@ function formatMm(value: number): string {
               class="min-w-0 flex-1"
             >
               <div class="truncate text-balance text-xs font-semibold text-highlighted">
-                {{ group.representative.role }}
+                {{ panelRoleText(group.representative.role) }}
               </div>
               <div class="truncate text-xs tabular-nums text-muted">
-                {{ formatMm(group.width) }} × {{ formatMm(group.height) }} × {{ formatMm(group.thickness) }} mm
+                {{ formatCentimeters(group.width) }} × {{ formatCentimeters(group.height) }} × {{ formatCentimeters(group.thickness) }} cm
               </div>
             </div>
           </div>

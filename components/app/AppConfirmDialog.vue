@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { uiText as t } from '~~/shared/i18n/ui-copy'
+
 interface Props {
   title?: string
   message?: string
@@ -9,8 +11,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   message: '',
-  cancelLabel: 'Cancel',
-  confirmLabel: 'Confirm',
+  cancelLabel: t('cancel'),
+  confirmLabel: t('confirm'),
   confirmColor: 'error',
 })
 const open = defineModel<boolean>('open', { required: true })

@@ -3,6 +3,7 @@ import * as Y from 'yjs'
 import type { CloudProjectRecord, FurnitureColumn, FurnitureConfig, LocalProjectRow, PublicStyle } from '~~/shared/domain/types'
 import { normalizePublicStyle } from '~~/shared/domain/defaults'
 import { isRenderMessage, RENDER_MESSAGES } from '~~/shared/render/messages'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 import { ensureInitialized, readFurnitureDoc } from '~~/shared/yjs/doc'
 
 interface Props {
@@ -59,17 +60,17 @@ const publicShareUrl = computed(() => {
   return `${origin}/p/${record.id}`
 })
 const hasPublicShareUrl = computed(() => publicShareUrl.value.length > 0)
-const title = computed(() => isPublished.value ? 'Published project' : 'Publish project')
+const title = computed(() => isPublished.value ? t('publishedProject') : t('publishProject'))
 const description = computed(() =>
   isPublished.value
-    ? 'Share the link below. Your cloud draft is what viewers see; autosync keeps it up to date.'
-    : 'Make this project public. The share link shows your current cloud design; edits sync to the published view.',
+    ? t('publishedProjectDescription')
+    : t('publishProjectDescription'),
 )
 const mp4ActionLabel = computed(() => {
-  if (previewVideoUrl.value) return 'Download MP4'
-  if (isRendering.value) return 'Generating MP4'
-  if (renderError.value) return 'Retry MP4'
-  return 'Generate MP4'
+  if (previewVideoUrl.value) return t('downloadMp4')
+  if (isRendering.value) return t('generatingMp4')
+  if (renderError.value) return t('retryMp4')
+  return t('generateMp4')
 })
 const mp4ActionIcon = computed(() => previewVideoUrl.value ? 'i-lucide-download' : 'i-lucide-video')
 
@@ -190,7 +191,7 @@ function schedulePreviewRender() {
 
 function safeFileName(name: string): string {
   const clean = name.trim().replace(/[^\w-]+/g, '_')
-  return clean.length > 0 ? clean.slice(0, 80) : 'project'
+  return clean.length > 0 ? clean.slice(0, 80) : t('defaultExportName')
 }
 
 function downloadPreview() {
@@ -301,7 +302,7 @@ async function publishProject() {
     schedulePreviewRender()
   }
   catch (err: unknown) {
-    errorMessage.value = (err as { message?: string } | null)?.message ?? 'Publish failed.'
+    errorMessage.value = (err as { message?: string } | null)?.message ?? t('publishFailed')
   }
   finally {
     publishing.value = false
@@ -332,7 +333,7 @@ async function unpublishProject() {
     emit('unpublished')
   }
   catch (err: unknown) {
-    errorMessage.value = (err as { message?: string } | null)?.message ?? 'Unpublish failed.'
+    errorMessage.value = (err as { message?: string } | null)?.message ?? t('unpublishFailed')
   }
   finally {
     unpublishing.value = false
@@ -365,6 +366,7 @@ async function unpublishProject() {
             v-else
             :columns="previewColumns"
             :furniture-config="previewConfig"
+            :public-style="normalizedPublicStyle"
             class="size-full rounded-none border-0 ring-0"
           />
           <div
@@ -380,7 +382,7 @@ async function unpublishProject() {
             v-else-if="previewLoading"
             class="absolute inset-0 flex items-center justify-center bg-muted px-3 text-center text-pretty text-xs text-muted"
           >
-            Loading preview...
+            {{ t('loadingPreview') }}
           </div>
         </div>
         <UButton
@@ -414,13 +416,13 @@ async function unpublishProject() {
         <UAlert
           color="success"
           variant="soft"
-          title="Published"
+          :title="t('published')"
           :description="publicShareUrl"
         />
         <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <UButton
             :icon="copiedFlash ? 'i-lucide-square-check' : 'i-lucide-copy'"
-            :label="copiedFlash ? 'Copied' : 'Copy public link'"
+            :label="copiedFlash ? t('copied') : t('copyPublicLink')"
             color="neutral"
             variant="soft"
             class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97] sm:flex-1"
@@ -428,7 +430,7 @@ async function unpublishProject() {
           />
           <UButton
             icon="i-lucide-eye-off"
-            label="Unpublish"
+            :label="t('unpublish')"
             color="neutral"
             variant="outline"
             class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97] sm:flex-1"
@@ -444,7 +446,7 @@ async function unpublishProject() {
         :class="isPublished ? 'grid-cols-1' : 'grid-cols-2'"
       >
         <UButton
-          label="Close"
+          :label="t('close')"
           color="neutral"
           variant="outline"
           class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
@@ -453,7 +455,7 @@ async function unpublishProject() {
         />
         <UButton
           v-if="!isPublished"
-          label="Publish"
+          :label="t('publish')"
           class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="publishing"
           :disabled="unpublishing"
@@ -470,16 +472,16 @@ async function unpublishProject() {
     :src="iframeSrc"
     :width="RENDER_VIDEO_SIZE_PX"
     :height="RENDER_VIDEO_SIZE_PX"
-    title="Morti video render"
+    :title="t('mortiVideoRender')"
     class="pointer-events-none fixed left-[-9999px] top-0 border-0 opacity-0"
   />
 
   <AppConfirmDialog
     v-model:open="confirmUnpublishOpen"
-    title="Unpublish project?"
-    message="The public link will stop working until you publish again."
-    cancel-label="Cancel"
-    confirm-label="Unpublish"
+    :title="t('unpublishProjectTitle')"
+    :message="t('unpublishProjectMessage')"
+    :cancel-label="t('cancel')"
+    :confirm-label="t('unpublish')"
     confirm-color="error"
     @confirm="unpublishProject"
   />

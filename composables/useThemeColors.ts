@@ -54,16 +54,16 @@ const CSS_VARS: Record<ThemeTokenName, string> = {
   success500: '--color-success-500',
 }
 
-// Fallback default values (Morti dark theme; xpmfTx8z.js lines 14-24)
+// Fallback default values for the current light graphite / soft-oak theme.
 const DEFAULTS: Record<ThemeTokenName, ThemeColor> = {
-  backgroundDefault: { rgbCss: 'rgb(28, 25, 23)', hex: 0x1c1917 },
-  backgroundMuted: { rgbCss: 'rgb(41, 37, 36)', hex: 0x292524 },
-  backgroundElevated: { rgbCss: 'rgb(41, 37, 36)', hex: 0x292524 },
-  borderDefault: { rgbCss: 'rgb(68, 64, 60)', hex: 0x44403c },
-  textDefault: { rgbCss: 'rgb(231, 229, 228)', hex: 0xe7e5e4 },
-  uiPrimary: { rgbCss: 'rgb(245, 158, 11)', hex: 0xf59e0b },
-  primary500: { rgbCss: 'rgb(245, 158, 11)', hex: 0xf59e0b },
-  neutral500: { rgbCss: 'rgb(120, 113, 108)', hex: 0x78716c },
+  backgroundDefault: { rgbCss: 'rgb(245, 245, 247)', hex: 0xf5f5f7 },
+  backgroundMuted: { rgbCss: 'rgb(238, 238, 239)', hex: 0xeeeeef },
+  backgroundElevated: { rgbCss: 'rgb(255, 255, 255)', hex: 0xffffff },
+  borderDefault: { rgbCss: 'rgb(210, 210, 215)', hex: 0xd2d2d7 },
+  textDefault: { rgbCss: 'rgb(29, 29, 31)', hex: 0x1d1d1f },
+  uiPrimary: { rgbCss: 'rgb(154, 122, 80)', hex: 0x9a7a50 },
+  primary500: { rgbCss: 'rgb(154, 122, 80)', hex: 0x9a7a50 },
+  neutral500: { rgbCss: 'rgb(115, 115, 115)', hex: 0x737373 },
   success500: { rgbCss: 'rgb(87, 134, 95)', hex: 0x57865f },
 }
 

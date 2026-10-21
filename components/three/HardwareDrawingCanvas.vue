@@ -6,6 +6,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { useThemeColors, getThemeColor } from '~~/composables/useThemeColors'
 import { useThreejsCanvas } from '~~/composables/useThreejsCanvas'
 import type { HardwareSpec } from '~~/shared/domain/types'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 
 interface Props {
   spec: HardwareSpec
@@ -152,7 +153,7 @@ onBeforeUnmount(() => {
   clearGroup()
 })
 
-const ariaLabel = computed(() => `${props.spec.code} ${props.spec.name} model preview`)
+const ariaLabel = computed(() => t('hardwareModelPreview', { code: props.spec.code, name: props.spec.name }))
 </script>
 
 <template>

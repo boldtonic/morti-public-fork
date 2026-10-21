@@ -21,7 +21,7 @@ const contentSizeClass = computed(() => {
 })
 
 const ui = computed(() => ({
-  overlay: 'bg-[color-mix(in_oklch,var(--color-morti-1000)_65%,transparent)] backdrop-blur-[2px]',
+  overlay: 'bg-[color-mix(in_oklch,var(--ui-bg-inverted)_38%,transparent)] backdrop-blur-[2px]',
   content: [
     '!max-w-[calc(100vw-1rem)]',
     contentSizeClass.value,

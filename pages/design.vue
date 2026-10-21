@@ -1,23 +1,24 @@
 <script setup lang="ts">
 import { getThemeColorTokens } from '~~/composables/useThemeColors'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 
 // --- Modal / slideover open state ---
 const modalOpen = ref(false)
 const slideoverOpen = ref(false)
 
 // --- Input demo state ---
-const projectName = ref('Oak shelf')
-const notes = ref('Notes for this piece…')
+const projectName = ref(t('designSampleProjectName'))
+const notes = ref(t('designSampleNotes'))
 const snapToGrid = ref(true)
 const showDimensions = ref(false)
 const units = ref('mm')
 const autosave = ref(true)
 const search = ref('')
-const disabledValue = ref('Read-only value')
+const disabledValue = ref(t('readOnlyValue'))
 
 const unitItems = [
-  { label: 'Millimeters', value: 'mm' },
-  { label: 'Inches', value: 'in' },
+  { label: t('millimeters'), value: 'mm' },
+  { label: t('inches'), value: 'in' },
 ]
 
 // --- Showcase data ---
@@ -48,10 +49,10 @@ function toHex(num: number): string {
   <UContainer class="py-8 sm:py-12">
     <div class="mb-8 sm:mb-10">
       <h1 class="text-3xl font-bold tracking-tight text-balance text-highlighted sm:text-4xl">
-        Design system
+        {{ t('designSystem') }}
       </h1>
       <p class="mt-2 max-w-2xl text-pretty text-muted">
-        Use this page while tuning Nuxt UI.
+        {{ t('designSystemDescription') }}
       </p>
     </div>
 
@@ -60,41 +61,40 @@ function toHex(num: number): string {
       <UCard>
         <template #header>
           <h2 class="text-balance text-lg font-semibold text-highlighted">
-            Typography
+            {{ t('typography') }}
           </h2>
         </template>
         <div class="space-y-3">
           <h1 class="text-4xl font-bold text-balance text-highlighted">
-            Heading 1
+            {{ t('headingOne') }}
           </h1>
           <h2 class="text-3xl font-bold text-balance text-highlighted">
-            Heading 2
+            {{ t('headingTwo') }}
           </h2>
           <h3 class="text-2xl font-semibold text-highlighted">
-            Heading 3
+            {{ t('headingThree') }}
           </h3>
           <h4 class="text-xl font-semibold text-highlighted">
-            Heading 4
+            {{ t('headingFour') }}
           </h4>
           <h5 class="text-lg font-semibold text-highlighted">
-            Heading 5
+            {{ t('headingFive') }}
           </h5>
           <h6 class="text-base font-semibold text-highlighted">
-            Heading 6
+            {{ t('headingSix') }}
           </h6>
           <p class="text-pretty text-default">
-            Body paragraph copy. The quick brown fox jumps over the lazy dog.
+            {{ t('bodyParagraphSample') }}
           </p>
           <p class="text-pretty text-muted">
-            Muted secondary text — for descriptions and supporting copy.
+            {{ t('mutedTextSample') }}
           </p>
           <p class="text-sm text-dimmed">
-            Dimmed tertiary text.
+            {{ t('dimmedTextSample') }}
           </p>
           <div class="prose dark:prose-invert max-w-none">
             <p>
-              Prose sample with <a href="#">inline link</a>, <code>inline code</code>,
-              and <strong>bold</strong>/<em>italic</em>.
+              {{ t('proseSample') }}
             </p>
           </div>
         </div>
@@ -104,7 +104,7 @@ function toHex(num: number): string {
       <UCard>
         <template #header>
           <h2 class="text-balance text-lg font-semibold text-highlighted">
-            Theme colors
+            {{ t('themeColors') }}
           </h2>
         </template>
         <div class="max-h-[70vh] space-y-10 overflow-y-auto pr-1">
@@ -144,7 +144,7 @@ function toHex(num: number): string {
       <UCard>
         <template #header>
           <h2 class="text-balance text-lg font-semibold text-highlighted">
-            Buttons
+            {{ t('buttons') }}
           </h2>
         </template>
         <div class="space-y-8">
@@ -162,35 +162,35 @@ function toHex(num: number): string {
                 :key="`${variant}-${color}`"
                 :variant="variant"
                 :color="color"
-                label="Action"
+                :label="t('action')"
               />
             </div>
           </div>
           <div class="space-y-3">
             <p class="text-sm font-medium text-muted">
-              Sizes
+              {{ t('sizes') }}
             </p>
             <div class="flex flex-wrap items-center gap-2">
               <UButton
                 v-for="size in sizes"
                 :key="size"
                 :size="size"
-                label="Size"
+                :label="t('size')"
               />
             </div>
           </div>
           <div class="flex flex-wrap gap-2">
             <UButton
               icon="i-lucide-plus"
-              label="With icon"
+              :label="t('withIcon')"
             />
             <UButton
               loading
-              label="Loading"
+              :label="t('loading')"
             />
             <UButton
               disabled
-              label="Disabled"
+              :label="t('disabled')"
             />
           </div>
         </div>
@@ -200,33 +200,33 @@ function toHex(num: number): string {
       <UCard>
         <template #header>
           <h2 class="text-balance text-lg font-semibold text-highlighted">
-            Inputs &amp; controls
+            {{ t('inputsControls') }}
           </h2>
         </template>
         <div class="grid max-w-xl gap-6">
           <UFormField
-            label="Project name"
-            description="Shown in the project list."
+            :label="t('projectName')"
+            :description="t('projectListDescription')"
           >
             <UInput
               v-model="projectName"
-              placeholder="e.g. Kitchen island"
+              :placeholder="t('exampleProjectPlaceholder')"
             />
           </UFormField>
-          <UFormField label="Search">
+          <UFormField :label="t('search')">
             <UInput
               v-model="search"
               icon="i-lucide-search"
-              placeholder="Filter projects…"
+              :placeholder="t('filterProjectsPlaceholder')"
             />
           </UFormField>
-          <UFormField label="Disabled">
+          <UFormField :label="t('disabled')">
             <UInput
               v-model="disabledValue"
               disabled
             />
           </UFormField>
-          <UFormField label="Notes">
+          <UFormField :label="t('notesField')">
             <UTextarea
               v-model="notes"
               :rows="4"
@@ -236,14 +236,14 @@ function toHex(num: number): string {
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
             <UCheckbox
               v-model="snapToGrid"
-              label="Snap to grid"
+              :label="t('snapToGrid')"
             />
             <UCheckbox
               v-model="showDimensions"
-              label="Show dimensions"
+              :label="t('showDimensions')"
             />
           </div>
-          <UFormField label="Units">
+          <UFormField :label="t('units')">
             <URadioGroup
               v-model="units"
               :items="unitItems"
@@ -253,7 +253,7 @@ function toHex(num: number): string {
           <div class="flex items-center gap-3">
             <USwitch
               v-model="autosave"
-              label="Enable autosave"
+              :label="t('enableAutosave')"
             />
           </div>
         </div>
@@ -263,16 +263,16 @@ function toHex(num: number): string {
       <UCard>
         <template #header>
           <h2 class="text-balance text-lg font-semibold text-highlighted">
-            Modal &amp; slideover
+            {{ t('modalSlideover') }}
           </h2>
         </template>
         <div class="flex flex-wrap gap-2">
           <UButton
-            label="Open dialog"
+            :label="t('openDialog')"
             @click="modalOpen = true"
           />
           <UButton
-            label="Open slideover"
+            :label="t('openSlideover')"
             color="neutral"
             variant="outline"
             @click="slideoverOpen = true"
@@ -281,22 +281,22 @@ function toHex(num: number): string {
 
         <AppDialog
           v-model:open="modalOpen"
-          title="Delete project?"
-          description="This removes the project from this device. This action cannot be undone."
+          :title="t('deleteProjectTitle')"
+          :description="t('deleteProjectDemoDescription')"
         >
           <p class="text-pretty text-sm text-muted">
-            Optional body copy with more detail.
+            {{ t('optionalBodyCopy') }}
           </p>
           <template #footer="{ close }">
             <div class="flex justify-end gap-2">
               <UButton
-                label="Cancel"
+                :label="t('cancel')"
                 color="neutral"
                 variant="ghost"
                 @click="close()"
               />
               <UButton
-                label="Delete"
+                :label="t('delete')"
                 color="error"
                 @click="close()"
               />
@@ -306,19 +306,19 @@ function toHex(num: number): string {
 
         <USlideover
           v-model:open="slideoverOpen"
-          title="Inspector"
-          description="Side panel pattern for tools and properties."
+          :title="t('inspector')"
+          :description="t('inspectorDescription')"
           side="right"
         >
           <template #body>
             <p class="text-pretty text-sm text-muted">
-              Slideover content goes here — dimensions, materials, export options, etc.
+              {{ t('slideoverDemoContent') }}
             </p>
           </template>
           <template #footer="{ close }">
             <UButton
               class="w-full justify-center"
-              label="Done"
+              :label="t('done')"
               @click="close()"
             />
           </template>
@@ -329,7 +329,7 @@ function toHex(num: number): string {
       <UCard>
         <template #header>
           <h2 class="text-balance text-lg font-semibold text-highlighted">
-            Badges
+            {{ t('badges') }}
           </h2>
         </template>
         <div class="space-y-6">
@@ -358,33 +358,33 @@ function toHex(num: number): string {
       <UCard>
         <template #header>
           <h2 class="text-balance text-lg font-semibold text-highlighted">
-            Alerts
+            {{ t('alerts') }}
           </h2>
         </template>
         <div class="space-y-4">
           <UAlert
             icon="i-lucide-info"
             color="info"
-            title="Autosave"
-            description="Projects are saved locally in your browser."
+            :title="t('autosave')"
+            :description="t('autosaveDescription')"
           />
           <UAlert
             icon="i-lucide-triangle-alert"
             color="warning"
-            title="Unsaved changes"
-            description="You have edits that are not yet persisted."
+            :title="t('unsavedChanges')"
+            :description="t('unsavedChangesDescription')"
           />
           <UAlert
             icon="i-lucide-circle-check"
             color="success"
-            title="Export complete"
-            description="Your cut list was downloaded."
+            :title="t('exportComplete')"
+            :description="t('exportCompleteDescription')"
           />
           <UAlert
             icon="i-lucide-circle-x"
             color="error"
-            title="Could not save"
-            description="Storage quota exceeded or access denied."
+            :title="t('couldNotSave')"
+            :description="t('couldNotSaveDescription')"
           />
         </div>
       </UCard>
@@ -393,33 +393,33 @@ function toHex(num: number): string {
       <UCard>
         <template #header>
           <h2 class="text-balance text-lg font-semibold text-highlighted">
-            Card layout
+            {{ t('cardLayout') }}
           </h2>
         </template>
         <UCard class="ring ring-default">
           <template #header>
             <div class="flex items-center justify-between gap-2">
-              <span class="font-medium text-highlighted">Nested card</span>
+              <span class="font-medium text-highlighted">{{ t('nestedCard') }}</span>
               <UBadge
-                label="WIP"
+                :label="t('wip')"
                 color="warning"
                 variant="subtle"
               />
             </div>
           </template>
           <p class="text-pretty text-sm text-muted">
-            Typical header / body / footer structure for project summaries or settings blocks.
+            {{ t('typicalCardDescription') }}
           </p>
           <template #footer>
             <div class="flex justify-end gap-2">
               <UButton
-                label="Secondary"
+                :label="t('secondary')"
                 color="neutral"
                 variant="ghost"
                 size="sm"
               />
               <UButton
-                label="Primary"
+                :label="t('primary')"
                 size="sm"
               />
             </div>

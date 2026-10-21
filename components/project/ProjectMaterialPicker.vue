@@ -9,6 +9,7 @@ import {
   sheenOverlay,
   type MaterialPreset,
 } from '~~/shared/domain/materials'
+import { materialCategoryText, materialPresetText, uiText as t } from '~~/shared/i18n/ui-copy'
 
 interface Props {
   label: string
@@ -32,11 +33,12 @@ const open = ref(false)
 
 const selected = computed<MaterialPreset | null>(() => findPreset(props.modelValue))
 const isCustom = computed(() => props.modelValue === CUSTOM_MATERIAL_ID)
+const selectedCopy = computed(() => selected.value ? materialPresetText(selected.value) : null)
 
 // Normalizer guarantees presetId is either a known preset or CUSTOM_MATERIAL_ID,
 // so `selected === null && !isCustom` is unreachable — only two branches needed.
-const triggerLabel = computed(() => selected.value?.label ?? 'Custom')
-const triggerSheen = computed(() => selected.value?.sheenLabel ?? 'Hex override')
+const triggerLabel = computed(() => selectedCopy.value?.label ?? t('custom'))
+const triggerSheen = computed(() => selectedCopy.value?.sheenLabel ?? t('hexOverride'))
 
 const triggerThumbStyle = computed<Record<string, string>>(() => {
   if (selected.value) return chipBackgroundStyle(selected.value.grain, selected.value.hex)
@@ -51,6 +53,7 @@ const grouped = computed(() =>
   MATERIAL_CATEGORY_ORDER
     .map(category => ({
       category,
+      categoryLabel: materialCategoryText(category),
       items: MATERIAL_PRESETS.filter(p => p.category === category),
     }))
     .filter(g => g.items.length > 0),
@@ -65,6 +68,14 @@ function onCustomInput(event: Event) {
   const value = (event.target as HTMLInputElement | null)?.value ?? '#888888'
   emit('update:customColor', value)
   if (props.modelValue !== CUSTOM_MATERIAL_ID) emit('update:modelValue', CUSTOM_MATERIAL_ID)
+}
+
+function presetLabel(preset: MaterialPreset): string {
+  return materialPresetText(preset).label
+}
+
+function presetSheen(preset: MaterialPreset): string {
+  return materialPresetText(preset).sheenLabel
 }
 </script>
 
@@ -131,7 +142,7 @@ function onCustomInput(event: Event) {
       <div class="material-picker-popover scrollbar-thin">
         <div class="material-picker-header">
           <p class="shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
-            {{ label }} material
+            {{ label }} {{ t('material') }}
           </p>
           <p
             v-if="hint"
@@ -144,7 +155,7 @@ function onCustomInput(event: Event) {
           :key="group.category"
         >
           <p class="mt-2 px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted/80">
-            {{ group.category }}
+            {{ group.categoryLabel }}
           </p>
           <div class="material-picker-grid mt-1.5 grid grid-cols-2 gap-2">
             <button
@@ -155,7 +166,7 @@ function onCustomInput(event: Event) {
               :class="modelValue === preset.id
                 ? 'is-selected'
                 : undefined"
-              :aria-label="`${preset.label}, ${preset.sheenLabel}`"
+              :aria-label="`${presetLabel(preset)}, ${presetSheen(preset)}`"
               :aria-pressed="modelValue === preset.id"
               @click="pickPreset(preset.id)"
             >
@@ -177,10 +188,10 @@ function onCustomInput(event: Event) {
               </span>
               <span class="flex flex-col gap-0 px-2 py-1.5">
                 <span class="truncate text-[11px] font-semibold leading-tight text-highlighted text-pretty">
-                  {{ preset.label }}
+                  {{ presetLabel(preset) }}
                 </span>
                 <span class="truncate text-[10px] leading-tight text-muted text-pretty">
-                  {{ preset.sheenLabel }}
+                  {{ presetSheen(preset) }}
                 </span>
               </span>
             </button>
@@ -188,12 +199,12 @@ function onCustomInput(event: Event) {
         </template>
 
         <p class="mt-3 px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted/80">
-          Custom
+          {{ t('custom') }}
         </p>
         <label
           role="radio"
           :aria-checked="isCustom"
-          aria-label="Custom hex color"
+          :aria-label="t('customHexColor')"
           class="material-custom-row mt-1.5 flex cursor-pointer items-center gap-2.5 overflow-hidden rounded-xl bg-default transition-[box-shadow,transform] duration-150 active:scale-[0.96]"
           :class="isCustom ? 'is-selected' : undefined"
         >
@@ -207,14 +218,14 @@ function onCustomInput(event: Event) {
             />
           </span>
           <span class="min-w-0 flex-1 py-1.5 leading-tight">
-            <span class="block text-[11px] font-semibold text-highlighted">Custom color…</span>
+            <span class="block text-[11px] font-semibold text-highlighted">{{ t('customColor') }}</span>
             <span class="block font-mono text-[10px] tabular-nums text-muted">{{ customColor.toUpperCase() }}</span>
           </span>
           <input
             type="color"
             class="mr-2 size-7 shrink-0 cursor-pointer rounded-md border border-default bg-transparent p-0"
             :value="customColor"
-            aria-label="Custom hex color"
+            :aria-label="t('customHexColor')"
             @input="onCustomInput"
           >
         </label>

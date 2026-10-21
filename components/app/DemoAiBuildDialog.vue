@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 
 interface Props {
   /** When true, the gated state is shown after clicking Generate. When false, generate works normally (parent handles). */
@@ -26,9 +27,9 @@ const promptOverLimit = computed(() => promptLength.value > AI_FURNITURE_PROMPT_
 const canGenerate = computed(() => promptLength.value > 0 && !promptOverLimit.value)
 
 const promptExamples = [
-  { label: 'Media console', prompt: 'A 1.8m wide media console with 6 modules, doors on both sides, and drawers in the middle.' },
-  { label: 'Bookshelf', prompt: 'A tall bookshelf with 4 even columns, mostly open shelves, and two lower drawers.' },
-  { label: 'Wardrobe', prompt: 'A wardrobe with 3 wide columns, full-height doors on the sides, and stacked drawers in the center.' },
+  { label: t('mediaConsole'), prompt: t('mediaConsolePrompt') },
+  { label: t('bookshelf'), prompt: t('bookshelfPrompt') },
+  { label: t('wardrobe'), prompt: t('wardrobePrompt') },
 ]
 
 function useExample(text: string) {
@@ -80,10 +81,10 @@ watch(open, (next) => {
           </span>
           <div class="min-w-0 flex-1">
             <h2 class="text-balance text-lg font-semibold tracking-[-0.01em] text-highlighted sm:text-xl">
-              Build your own with AI
+              {{ t('buildOwnWithAi') }}
             </h2>
             <p class="text-pretty text-sm text-muted">
-              Describe a cabinet, shelf, or wardrobe — we'll lay it out for you.
+              {{ t('demoAiDescription') }}
             </p>
           </div>
         </div>
@@ -105,7 +106,7 @@ watch(open, (next) => {
               for="demo-ai-prompt"
               class="text-sm font-medium text-highlighted"
             >
-              Your idea
+              {{ t('yourIdea') }}
             </label>
             <span
               class="text-[11px] tabular-nums"
@@ -120,7 +121,7 @@ watch(open, (next) => {
             v-model="prompt"
             rows="5"
             :maxlength="AI_FURNITURE_PROMPT_MAX_LENGTH"
-            placeholder="e.g. 1.8m wide media console, three columns, drawers in the middle, doors on both sides"
+            :placeholder="t('promptPlaceholder')"
             class="block min-h-36 w-full resize-y rounded-lg bg-default px-3 py-3 text-sm leading-6 text-highlighted shadow-sm outline-none ring-1 ring-default/70 transition-[background-color,box-shadow] duration-150 placeholder:text-muted focus:bg-elevated focus:ring-2 focus:ring-primary/70"
             @keydown.meta.enter.prevent="onGenerateClick"
             @keydown.ctrl.enter.prevent="onGenerateClick"
@@ -155,7 +156,7 @@ watch(open, (next) => {
               class="size-4 text-primary"
             />
             <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
-              Your idea is saved
+              {{ t('ideaSaved') }}
             </p>
           </div>
           <p class="text-pretty text-sm leading-relaxed text-highlighted">
@@ -165,10 +166,10 @@ watch(open, (next) => {
 
         <div class="demo-ai-stagger-2 grid gap-2.5 text-pretty text-center">
           <h3 class="text-balance text-base font-semibold text-highlighted sm:text-lg">
-            One free account away from bringing it to life.
+            {{ t('oneAccountAway') }}
           </h3>
           <p class="text-pretty text-sm text-muted">
-            Sign up to generate, edit, and export this design — and any others you can imagine.
+            {{ t('signupToGenerate') }}
           </p>
         </div>
 
@@ -178,7 +179,7 @@ watch(open, (next) => {
             size="lg"
             color="primary"
             variant="solid"
-            label="Sign up free"
+            :label="t('signUpFree')"
             icon="i-lucide-sparkles"
             class="min-h-12 justify-center text-sm font-semibold shadow-lg shadow-primary/25 ring-1 ring-inset ring-white/10 transition-[transform,box-shadow] duration-150 ease-out hover:shadow-xl hover:shadow-primary/30 active:scale-[0.97]"
             @click="emit('request-signup', prompt.trim())"
@@ -187,7 +188,7 @@ watch(open, (next) => {
             block
             color="neutral"
             variant="ghost"
-            label="Edit prompt"
+            :label="t('editPrompt')"
             icon="i-lucide-arrow-left"
             class="min-h-10 justify-center transition-transform active:scale-[0.97]"
             @click="backToCompose"
@@ -202,14 +203,14 @@ watch(open, (next) => {
     >
       <div class="grid w-full grid-cols-3 gap-2">
         <UButton
-          label="Cancel"
+          :label="t('cancel')"
           color="neutral"
           variant="ghost"
           class="col-span-1 w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           @click="close()"
         />
         <UButton
-          label="Generate"
+          :label="t('generate')"
           icon="i-lucide-sparkles"
           color="primary"
           class="col-span-2 w-full min-h-10 min-w-0 justify-center shadow-md shadow-primary/20 transition-[transform,box-shadow] duration-150 hover:shadow-lg hover:shadow-primary/25 active:scale-[0.97]"

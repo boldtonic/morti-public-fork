@@ -13,6 +13,7 @@ import {
 } from '~~/shared/three/outline'
 import { makePanelMaterial } from '~~/shared/three/materials'
 import type { CompiledPanel, PanelOperation } from '~~/shared/domain/types'
+import { panelRoleText, uiText as t } from '~~/shared/i18n/ui-copy'
 
 interface Props {
   part: CompiledPanel
@@ -249,7 +250,7 @@ onBeforeUnmount(() => {
   disposePanelMesh()
 })
 
-const ariaLabel = computed(() => `Technical drawing for panel ${props.part.role}`)
+const ariaLabel = computed(() => t('technicalDrawingForPanel', { role: panelRoleText(props.part.role) }))
 </script>
 
 <template>

@@ -6,21 +6,20 @@
     "Public Sans", "Public Sans Fallback: BlinkMacSystemFont", "Public Sans Fallback: Segoe UI", "Public Sans Fallback: Helvetica Neue", "Public Sans Fallback: Arial",
     "Public Sans Fallback: Noto Sans", sans-serif;
 
-  /* Morti palette (warm amber, hue 55) — perceptually uniform OKLCH scale.
-     Source colors 1→12 mapped to Tailwind 950→50 stops.
-     Stop 1000 preserves color-1 (deepest surface). */
-  --color-morti-50: oklch(0.935 0.063 55);
-  --color-morti-100: oklch(0.869 0.108 55);
-  --color-morti-200: oklch(0.725 0.175 55);
-  --color-morti-300: oklch(0.67 0.182 55);
-  --color-morti-400: oklch(0.588 0.178 55);
-  --color-morti-500: oklch(0.5 0.158 55);
-  --color-morti-600: oklch(0.432 0.148 55);
-  --color-morti-700: oklch(0.381 0.127 55);
-  --color-morti-800: oklch(0.335 0.103 55);
-  --color-morti-900: oklch(0.284 0.074 55);
-  --color-morti-950: oklch(0.22 0.039 55);
-  --color-morti-1000: oklch(0.188 0.028 55);
+  /* Restrained warm accent: white-oak / soft brass rather than technical orange.
+     The name stays as `morti` so existing utilities and persisted references remain valid. */
+  --color-morti-50: oklch(0.98 0.012 78);
+  --color-morti-100: oklch(0.95 0.018 78);
+  --color-morti-200: oklch(0.89 0.028 76);
+  --color-morti-300: oklch(0.8 0.042 74);
+  --color-morti-400: oklch(0.69 0.052 72);
+  --color-morti-500: oklch(0.58 0.056 70);
+  --color-morti-600: oklch(0.48 0.052 68);
+  --color-morti-700: oklch(0.38 0.042 66);
+  --color-morti-800: oklch(0.3 0.032 64);
+  --color-morti-900: oklch(0.23 0.024 62);
+  --color-morti-950: oklch(0.18 0.018 60);
+  --color-morti-1000: oklch(0.13 0.012 58);
 
   --ui-radius: 0.5rem;
   --ui-header-height: 4rem;
@@ -125,26 +124,47 @@ p {
 
 /* Tabular figures for any element with class `tabular-nums` (already a Tailwind utility) */
 
-/* Dark mode token overrides — anchor backgrounds, text and borders to specific morti stops
-   so the warm hue carries through every surface. */
+/* Apple-like light baseline: soft gray canvas, white surfaces, graphite text. */
+:root,
+.light {
+  --ui-bg: #f5f5f7;
+  --ui-bg-muted: #eeeeef;
+  --ui-bg-elevated: #ffffff;
+  --ui-bg-accented: #e5e5e7;
+  --ui-bg-inverted: #1d1d1f;
+
+  --ui-text: #1d1d1f;
+  --ui-text-muted: #6e6e73;
+  --ui-text-toned: #424245;
+  --ui-text-dimmed: #86868b;
+  --ui-text-highlighted: #111113;
+  --ui-text-inverted: #f5f5f7;
+
+  --ui-border: #d2d2d7;
+  --ui-border-muted: #e1e1e4;
+  --ui-border-accented: #b9b9bf;
+  --ui-border-inverted: #1d1d1f;
+}
+
+/* Dark mode is retained, but as neutral graphite rather than warm brown. */
 .dark {
-  --ui-bg: var(--color-morti-1000);
-  --ui-bg-muted: var(--color-morti-950);
-  --ui-bg-elevated: var(--color-morti-900);
-  --ui-bg-accented: var(--color-morti-800);
-  --ui-bg-inverted: oklch(0.96 0.012 55);
+  --ui-bg: #1d1d1f;
+  --ui-bg-muted: #252527;
+  --ui-bg-elevated: #2f2f32;
+  --ui-bg-accented: #3a3a3d;
+  --ui-bg-inverted: #f5f5f7;
 
-  --ui-text: oklch(0.92 0.024 55);
-  --ui-text-muted: oklch(0.74 0.034 55);
-  --ui-text-toned: oklch(0.83 0.028 55);
-  --ui-text-dimmed: oklch(0.6 0.034 55);
-  --ui-text-highlighted: oklch(0.97 0.014 55);
-  --ui-text-inverted: var(--color-morti-1000);
+  --ui-text: #f5f5f7;
+  --ui-text-muted: #a1a1a6;
+  --ui-text-toned: #d2d2d7;
+  --ui-text-dimmed: #86868b;
+  --ui-text-highlighted: #ffffff;
+  --ui-text-inverted: #1d1d1f;
 
-  --ui-border: oklch(0.32 0.052 55);
-  --ui-border-muted: oklch(0.27 0.045 55);
-  --ui-border-accented: oklch(0.4 0.07 55);
-  --ui-border-inverted: oklch(0.96 0.012 55);
+  --ui-border: #424245;
+  --ui-border-muted: #303033;
+  --ui-border-accented: #5b5b60;
+  --ui-border-inverted: #f5f5f7;
 }
 
 /* Smooth, GPU-friendly transitions reserved for visible UI properties.
@@ -173,7 +193,7 @@ p {
   outline-offset: -1px;
 }
 
-/* Layered presence for cards on warm dark surfaces.
+/* Layered presence for cards on neutral graphite/light surfaces.
    - Top-edge inner highlight simulates a key light on the bezel ("glass-lit").
    - Hairline ring uses brand border tokens; hover warms toward morti-400.
    - Ambient drop shadow plus a hover under-glow keyed to the brand hue.

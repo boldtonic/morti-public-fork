@@ -3,8 +3,11 @@ import type * as Y from 'yjs'
 import type { AiFurnitureDraft, AiFurnitureGenerateResponse } from '~~/shared/domain/ai-furniture'
 import { AI_FURNITURE_PROMPT_MAX_LENGTH } from '~~/shared/domain/ai-furniture'
 import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_COUNT_MIN, DEFAULT_FURNITURE_CONFIG, FURNITURE_CONFIG_WRITABLE_KEYS, MODULE_TYPES } from '~~/shared/domain/defaults'
-import type { FurnitureConfig, FurnitureModule, ModuleType } from '~~/shared/domain/types'
+import { moduleHandleHorizontalPosition, moduleHandleMode } from '~~/shared/domain/handles'
+import { clampInteriorShelfCountForHeight, INTERIOR_SHELF_COUNT_MAX, INTERIOR_SHELF_COUNT_MIN, maxInteriorShelfCountForHeight, normalizeInteriorShelfCount } from '~~/shared/domain/interior-shelves'
+import type { FurnitureConfig, FurnitureModule, HandleHorizontalPosition, HandleMode, HandleOrientation, HandlePosition, ModuleType, PublicStyle } from '~~/shared/domain/types'
 import { validateFurnitureDocIssues } from '~~/shared/domain/assembly-validation'
+import { furnitureConfigText, moduleTypeText, uiText as t } from '~~/shared/i18n/ui-copy'
 import {
   insertColumn,
   insertModule,
@@ -15,7 +18,11 @@ import {
   setColumnWidth,
   setConfigValue,
   setDrawerCount,
+  setShelfCount,
   setModuleHeight,
+  setModuleHandleMode,
+  setModuleHandleOrientation,
+  setModuleHandlePlacement,
   setModuleType,
 } from '~~/shared/yjs/doc'
 
@@ -23,6 +30,7 @@ interface Props {
   ydoc: Y.Doc
   selectedModules?: { id: string }[]
   zoomPercent?: number
+  publicStyle?: PublicStyle | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -165,13 +173,20 @@ function clampModuleHeight(module: FurnitureModule, h: number): number {
   return clampNumber(h, min, max)
 }
 
-function setModuleHeightWithDrawerClamp(columnIndex: number, moduleIndex: number, module: FurnitureModule, height: number) {
+function setModuleHeightWithContentClamp(columnIndex: number, moduleIndex: number, module: FurnitureModule, height: number) {
   let nextModule = module
   if (module.type === 'drawer') {
     const drawerCount = drawerCountForHeight(module, height)
     if (drawerCount !== (module.drawerCount ?? DEFAULT_DRAWER_COUNT)) {
       setDrawerCount(props.ydoc, columnIndex, moduleIndex, drawerCount)
       nextModule = { ...module, drawerCount }
+    }
+  }
+  else if (module.type === 'shelf') {
+    const shelfCount = clampInteriorShelfCountForHeight(module.shelfCount, height, config.value)
+    if (shelfCount !== normalizeInteriorShelfCount(module.shelfCount)) {
+      setShelfCount(props.ydoc, columnIndex, moduleIndex, shelfCount)
+      nextModule = { ...module, shelfCount }
     }
   }
   setModuleHeight(props.ydoc, columnIndex, moduleIndex, clampModuleHeight(nextModule, height))
@@ -222,7 +237,7 @@ function setColumnWidthAt(columnIndex: number, w: number) {
 function setModuleHeightAt(columnIndex: number, moduleIndex: number, h: number) {
   const module = columns.value[columnIndex]?.modules[moduleIndex]
   if (!module) return
-  setModuleHeightWithDrawerClamp(columnIndex, moduleIndex, module, h)
+  setModuleHeightWithContentClamp(columnIndex, moduleIndex, module, h)
 }
 
 function removeSelectedModule(columnIndex: number, moduleIndex: number) {
@@ -240,7 +255,7 @@ function updateSelectedModulesType(type: ModuleType) {
   for (const info of selectedModuleInfos.value) {
     setModuleType(props.ydoc, info.columnIndex, info.moduleIndex, type)
     const module = readFurnitureDoc(props.ydoc).columns[info.columnIndex]?.modules[info.moduleIndex]
-    if (module) setModuleHeightWithDrawerClamp(info.columnIndex, info.moduleIndex, module, module.height)
+    if (module) setModuleHeightWithContentClamp(info.columnIndex, info.moduleIndex, module, module.height)
   }
 }
 
@@ -256,7 +271,7 @@ function updateSelectedModulesColumnWidth(width: number) {
 
 function updateSelectedModulesHeight(height: number) {
   for (const info of selectedModuleInfos.value) {
-    setModuleHeightWithDrawerClamp(info.columnIndex, info.moduleIndex, info.module, height)
+    setModuleHeightWithContentClamp(info.columnIndex, info.moduleIndex, info.module, height)
   }
 }
 
@@ -265,8 +280,16 @@ function updateSelectedModulesDrawerCount(drawerCount: number) {
   for (const info of selectedModuleInfos.value) {
     if (info.module.type === 'drawer') {
       setDrawerCount(props.ydoc, info.columnIndex, info.moduleIndex, next)
-      setModuleHeightWithDrawerClamp(info.columnIndex, info.moduleIndex, { ...info.module, drawerCount: next }, info.module.height)
+      setModuleHeightWithContentClamp(info.columnIndex, info.moduleIndex, { ...info.module, drawerCount: next }, info.module.height)
     }
+  }
+}
+
+function updateSelectedModulesShelfCount(shelfCount: number) {
+  for (const info of selectedModuleInfos.value) {
+    if (info.module.type !== 'shelf') continue
+    const next = clampInteriorShelfCountForHeight(shelfCount, info.module.height, config.value)
+    setShelfCount(props.ydoc, info.columnIndex, info.moduleIndex, next)
   }
 }
 
@@ -346,45 +369,19 @@ interface DesignerIssue {
 interface ConfigField {
   key: string
   label: string
-  unit: 'm' | 'mm'
+  unit: 'cm'
   help: string
 }
 
-const configFieldLabels: Record<string, { label: string, unit: 'm' | 'mm', help: string }> = {
-  depth: { label: 'Depth', unit: 'm', help: 'Overall front-to-back depth of the furniture piece.' },
-  panelThickness: { label: 'Panel thickness', unit: 'mm', help: 'Thickness of structural panels (sides, decks, dividers).' },
-  backPanelThickness: { label: 'Back panel thickness', unit: 'mm', help: 'Thickness of the back panel, typically thinner than structural panels.' },
-  panelJointClearance: { label: 'Panel joint clearance', unit: 'mm', help: 'Small fit allowance at carcass joints and vertical gap above/below each drawer (same value subtracted at top and bottom of the drawer band).' },
-  frontClearance: { label: 'Front clearance', unit: 'mm', help: 'Visible/functional gap around drawer and door fronts so they open without binding.' },
-  sidePanelOverhang: { label: 'Side panel overhang', unit: 'mm', help: 'Extra height of the vertical side panels beyond the stacked module heights.' },
-  pullHoleDiameter: { label: 'Pull hole diameter', unit: 'mm', help: 'Diameter of the circular finger-pull hole used to open drawers and doors.' },
-  pullHoleEdgeInset: { label: 'Pull hole edge inset', unit: 'mm', help: 'Distance from the front edges to the center of each pull hole.' },
-  pullHolePairGap: { label: 'Pull hole pair gap', unit: 'mm', help: 'Center-to-center distance between two pull holes when a module uses a pair.' },
-  backPanelGrooveClearance: { label: 'Back panel groove clearance', unit: 'mm', help: 'Extra width on back-panel grooves beyond back panel thickness so the panel slides without binding.' },
-  drawerBottomInset: { label: 'Drawer box vertical inset', unit: 'mm', help: 'Symmetric vertical inset for drawer side/back panels and the bottom board.' },
-  drawerSlidesReserve: { label: 'Drawer slides reserve', unit: 'mm', help: 'Rear depth reserve for slide return, wiring, and related hardware.' },
-  backPanelInset: { label: 'Back panel inset (rear hardware reserve)', unit: 'mm', help: 'Distance from the cabinet rear to the outer face of the carcass back panel.' },
-  minColumnWidth: { label: 'Min column width', unit: 'm', help: 'Minimum width of a column when editing (meters). Values below this are clamped on commit.' },
-  maxColumnWidth: { label: 'Max column width', unit: 'm', help: 'Maximum width of a column when editing (meters). Values above this are clamped on commit.' },
-  minModuleHeight: { label: 'Min module height', unit: 'm', help: 'Minimum height of any module stack segment (meters).' },
-  maxModuleHeight: { label: 'Max module height', unit: 'm', help: 'Maximum height of any module stack segment (meters).' },
-  minDrawerHeight: { label: 'Min drawer band height', unit: 'm', help: 'Minimum height per drawer inside a drawer module (module height / drawer count).' },
-  maxDrawerHeight: { label: 'Max drawer band height', unit: 'm', help: 'Maximum height per drawer inside a drawer module (module height / drawer count).' },
-}
-
 const projectDesignerConfigFields: ConfigField[] = FURNITURE_CONFIG_WRITABLE_KEYS.map((key) => {
-  const meta = configFieldLabels[key]
+  const meta = furnitureConfigText(key)
   return {
     key,
-    label: meta?.label ?? key,
-    unit: meta?.unit ?? 'mm',
-    help: meta?.help ?? key,
+    label: meta.label,
+    unit: 'cm',
+    help: meta.help,
   }
 })
-
-const summaryConfigFields = projectDesignerConfigFields.filter(field =>
-  field.key === 'depth' || field.key === 'panelThickness' || field.key === 'sidePanelOverhang',
-)
 
 const settingsOpen = ref(false)
 const copiedConfig = ref(false)
@@ -412,16 +409,16 @@ const aiCanGenerate = computed(() =>
 )
 const aiPromptExamples = [
   {
-    label: 'Media console',
-    prompt: 'A 1.8m wide media console with 6 modules, doors on both sides, and drawers in the middle.',
+    label: t('mediaConsole'),
+    prompt: t('mediaConsolePrompt'),
   },
   {
-    label: 'Bookshelf',
-    prompt: 'A tall bookshelf with 4 even columns, mostly open shelves, and two lower drawers.',
+    label: t('bookshelf'),
+    prompt: t('bookshelfPrompt'),
   },
   {
-    label: 'Wardrobe',
-    prompt: 'A wardrobe with 3 wide columns, full-height doors on the sides, and stacked drawers in the center.',
+    label: t('wardrobe'),
+    prompt: t('wardrobePrompt'),
   },
 ]
 
@@ -444,13 +441,13 @@ const selectedTypeValue = computed(() => {
 const selectedColumnWidthValue = computed(() => {
   if (selectedModuleInfos.value.length === 0) return ''
   const first = selectedModuleInfos.value[0]?.columnWidth
-  return typeof first === 'number' && selectedModuleInfos.value.every(info => info.columnWidth === first) ? String(first) : ''
+  return typeof first === 'number' && selectedModuleInfos.value.every(info => info.columnWidth === first) ? formatCentimeters(first) : ''
 })
 
 const selectedHeightValue = computed(() => {
   if (selectedModuleInfos.value.length === 0) return ''
   const first = selectedModuleInfos.value[0]?.module.height
-  return typeof first === 'number' && selectedModuleInfos.value.every(info => info.module.height === first) ? String(first) : ''
+  return typeof first === 'number' && selectedModuleInfos.value.every(info => info.module.height === first) ? formatCentimeters(first) : ''
 })
 
 const selectedDrawerCountValue = computed(() => {
@@ -459,9 +456,63 @@ const selectedDrawerCountValue = computed(() => {
   return typeof first === 'number' && selectedModuleInfos.value.every(info => info.module.type === 'drawer' && info.module.drawerCount === first) ? String(first) : ''
 })
 
+const selectedShelfCountValue = computed(() => {
+  if (selectedTypeValue.value !== 'shelf') return ''
+  const first = normalizeInteriorShelfCount(selectedModuleInfos.value[0]?.module.shelfCount)
+  return selectedModuleInfos.value.every(info =>
+    info.module.type === 'shelf' && normalizeInteriorShelfCount(info.module.shelfCount) === first,
+  ) ? String(first) : ''
+})
+
+const selectedShelfCountMax = computed(() => {
+  const shelfModules = selectedModuleInfos.value.filter(info => info.module.type === 'shelf')
+  if (shelfModules.length === 0) return INTERIOR_SHELF_COUNT_MIN
+  return Math.min(...shelfModules.map(info => maxInteriorShelfCountForHeight(info.module.height, config.value)))
+})
+
+const selectedHandleModuleInfos = computed(() => selectedModuleInfos.value.filter(info => info.module.type !== 'shelf'))
+
+const selectedHandleModeValue = computed<HandleMode | '__multiple__'>(() => {
+  const infos = selectedHandleModuleInfos.value
+  if (infos.length === 0) return '__multiple__'
+  const first = moduleHandleMode(infos[0]!.module)
+  return infos.every(info => moduleHandleMode(info.module) === first) ? first : '__multiple__'
+})
+
+type HandlePlacementKey = `${HandlePosition}-${HandleHorizontalPosition}`
+
+const selectedHandlePlacementValue = computed<HandlePlacementKey | '__multiple__'>(() => {
+  const infos = selectedHandleModuleInfos.value
+  if (infos.length === 0) return '__multiple__'
+  const placement = (module: FurnitureModule): HandlePlacementKey =>
+    `${module.handlePosition ?? 'top'}-${moduleHandleHorizontalPosition(module)}`
+  const first = placement(infos[0]!.module)
+  return infos.every(info => placement(info.module) === first) ? first : '__multiple__'
+})
+
+const selectedHandleOrientationValue = computed<HandleOrientation | '__multiple__'>(() => {
+  const infos = selectedHandleModuleInfos.value
+  if (infos.length === 0) return '__multiple__'
+  const orientation = (module: FurnitureModule): HandleOrientation => module.handleOrientation ?? (module.type === 'drawer' ? 'horizontal' : 'vertical')
+  const first = orientation(infos[0]!.module)
+  return infos.every(info => orientation(info.module) === first) ? first : '__multiple__'
+})
+
+const handlePlacementOptions = computed<{ key: HandlePlacementKey, vertical: HandlePosition, horizontal: HandleHorizontalPosition, icon: string, label: string }[]>(() => [
+  { key: 'top-left', vertical: 'top', horizontal: 'left', icon: 'i-lucide-arrow-up-left', label: t('handlePositionTopLeft') },
+  { key: 'top-center', vertical: 'top', horizontal: 'center', icon: 'i-lucide-arrow-up', label: t('handlePositionTopCenter') },
+  { key: 'top-right', vertical: 'top', horizontal: 'right', icon: 'i-lucide-arrow-up-right', label: t('handlePositionTopRight') },
+  { key: 'center-left', vertical: 'center', horizontal: 'left', icon: 'i-lucide-arrow-left', label: t('handlePositionCenterLeft') },
+  { key: 'center-center', vertical: 'center', horizontal: 'center', icon: 'i-lucide-circle-dot', label: t('handlePositionCenter') },
+  { key: 'center-right', vertical: 'center', horizontal: 'right', icon: 'i-lucide-arrow-right', label: t('handlePositionCenterRight') },
+  { key: 'bottom-left', vertical: 'bottom', horizontal: 'left', icon: 'i-lucide-arrow-down-left', label: t('handlePositionBottomLeft') },
+  { key: 'bottom-center', vertical: 'bottom', horizontal: 'center', icon: 'i-lucide-arrow-down', label: t('handlePositionBottomCenter') },
+  { key: 'bottom-right', vertical: 'bottom', horizontal: 'right', icon: 'i-lucide-arrow-down-right', label: t('handlePositionBottomRight') },
+])
+
 const selectedTypeItems = computed(() => [
-  { value: '__multiple__', label: 'multiple' },
-  ...MODULE_TYPES.map(type => ({ value: type, label: type })),
+  { value: '__multiple__', label: t('multiple') },
+  ...MODULE_TYPES.map(type => ({ value: type, label: moduleTypeText(type) })),
 ])
 
 function parsePositiveMetric(value: string): number | null {
@@ -475,17 +526,21 @@ function parseNonNegativeMetric(value: string): number | null {
   return Number.isFinite(next) && next >= 0 ? next : null
 }
 
+function centimetersToMeters(centimeters: number): number {
+  return centimeters / 100
+}
+
+function formatCentimeters(meters: number): string {
+  if (!Number.isFinite(meters)) return ''
+  const centimeters = Math.round(meters * 1000) / 10
+  return String(centimeters)
+}
+
 function formatConfigValue(field: ConfigField) {
   const key = field.key as keyof FurnitureConfig
   const value = effectiveConfig.value[key] ?? DEFAULT_FURNITURE_CONFIG[key]
   if (!Number.isFinite(value)) return ''
-  return field.unit === 'mm' ? String(Math.round(value * 1000)) : String(value)
-}
-
-function summaryLabel(field: ConfigField) {
-  if (field.key === 'panelThickness') return 'Thickness'
-  if (field.key === 'sidePanelOverhang') return 'Overhang'
-  return field.label
+  return formatCentimeters(value)
 }
 
 function updateConfigValue(key: string, value: number) {
@@ -500,7 +555,7 @@ function commitConfigField(field: ConfigField, event: Event) {
     input.value = formatConfigValue(field)
     return
   }
-  updateConfigValue(field.key, field.unit === 'mm' ? parsed / 1000 : parsed)
+  updateConfigValue(field.key, centimetersToMeters(parsed))
   input.value = formatConfigValue(field)
 }
 
@@ -557,18 +612,18 @@ function aiFetchErrorMessage(err: unknown): string {
     || error?.statusMessage
     || error?.data?.message
     || error?.message
-    || 'Could not generate furniture.'
+    || t('aiGenerateError')
 }
 
 async function generateAiFurniture() {
   const prompt = aiPrompt.value.trim()
   aiError.value = ''
   if (!prompt) {
-    aiError.value = 'Enter a prompt.'
+    aiError.value = t('promptEmptyError')
     return
   }
   if (prompt.length > AI_FURNITURE_PROMPT_MAX_LENGTH) {
-    aiError.value = `Prompt must be ${AI_FURNITURE_PROMPT_MAX_LENGTH} characters or fewer.`
+    aiError.value = t('promptTooLong', { max: AI_FURNITURE_PROMPT_MAX_LENGTH })
     return
   }
   aiAbortController?.abort()
@@ -647,7 +702,7 @@ function onSelectedColumnWidthCommit(event: Event) {
   if (!input) return
   const value = parsePositiveMetric(input.value)
   if (value == null) input.value = selectedColumnWidthValue.value
-  else updateSelectedModulesColumnWidth(value)
+  else updateSelectedModulesColumnWidth(centimetersToMeters(value))
 }
 
 function onSelectedHeightCommit(event: Event) {
@@ -655,7 +710,7 @@ function onSelectedHeightCommit(event: Event) {
   if (!input) return
   const value = parsePositiveMetric(input.value)
   if (value == null) input.value = selectedHeightValue.value
-  else updateSelectedModulesHeight(value)
+  else updateSelectedModulesHeight(centimetersToMeters(value))
 }
 
 function onSelectedDrawerCountCommit(event: Event) {
@@ -671,6 +726,38 @@ function onSelectedDrawerCountCommit(event: Event) {
   input.value = String(next)
 }
 
+function onSelectedShelfCountCommit(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  if (!input) return
+  const value = Number(input.value.trim())
+  const rounded = Math.round(value)
+  if (!Number.isFinite(value) || rounded < INTERIOR_SHELF_COUNT_MIN || rounded > INTERIOR_SHELF_COUNT_MAX) {
+    input.value = selectedShelfCountValue.value
+    return
+  }
+  const next = Math.min(rounded, selectedShelfCountMax.value)
+  updateSelectedModulesShelfCount(next)
+  input.value = String(next)
+}
+
+function updateSelectedHandleMode(mode: HandleMode) {
+  for (const info of selectedHandleModuleInfos.value) {
+    setModuleHandleMode(props.ydoc, info.columnIndex, info.moduleIndex, mode)
+  }
+}
+
+function updateSelectedHandlePlacement(vertical: HandlePosition, horizontal: HandleHorizontalPosition) {
+  for (const info of selectedHandleModuleInfos.value) {
+    setModuleHandlePlacement(props.ydoc, info.columnIndex, info.moduleIndex, vertical, horizontal)
+  }
+}
+
+function updateSelectedHandleOrientation(orientation: HandleOrientation) {
+  for (const info of selectedHandleModuleInfos.value) {
+    setModuleHandleOrientation(props.ydoc, info.columnIndex, info.moduleIndex, orientation)
+  }
+}
+
 if (getCurrentScope()) {
   onScopeDispose(() => {
     abortAiGeneration()
@@ -684,6 +771,7 @@ if (getCurrentScope()) {
     <ProjectDesignerFrontView
       :columns="columns"
       :config="config"
+      :public-style="publicStyle"
       :selected-module-ids="selectedIds"
       :zoom-percent="clampedZoomPercent"
       class="relative z-0 min-h-0 w-full flex-1"
@@ -696,15 +784,19 @@ if (getCurrentScope()) {
       @column-resize-start="onColumnResizeStart"
       @set-column-width="setColumnWidthAt"
       @set-module-height="setModuleHeightAt"
+      @open-project-details="settingsOpen = true"
+      @set-config-value="updateConfigValue"
       @update:zoom-percent="(v: number) => emit('update:zoomPercent', v)"
     />
 
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-4 sm:px-3 sm:pb-3 sm:pt-10">
+    <div
+      v-if="selectedCount > 0 || visibleIssues.length > 0"
+      class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-4 sm:px-3 sm:pb-3 sm:pt-10"
+    >
       <div
-        class="pointer-events-auto flex w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-xl bg-elevated shadow-lg ring-1 ring-default/60"
-        :class="selectedCount > 0 ? 'max-h-[min(11rem,30dvh)] sm:max-h-[min(16rem,42vh)]' : 'max-h-[min(10rem,28dvh)] sm:max-h-[min(18rem,46vh)]'"
+        class="pointer-events-auto max-h-[min(70dvh,32rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-xl bg-elevated shadow-lg ring-1 ring-default/60 sm:max-h-none sm:overflow-visible"
       >
-        <div class="inspector-root grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-muted">
+        <div class="inspector-root min-w-0 bg-elevated">
           <div
             v-if="visibleIssues.length > 0"
             class="px-3 py-3 sm:px-4"
@@ -721,21 +813,23 @@ if (getCurrentScope()) {
             </div>
           </div>
 
-          <div class="min-h-0 overflow-auto p-3 sm:p-4">
+          <div
+            v-if="selectedCount > 0"
+            class="p-3 sm:p-4"
+          >
             <div
-              v-if="selectedCount > 0"
               class="grid gap-3"
             >
-              <article class="grid gap-3 rounded-lg bg-default p-3 text-sm shadow-sm">
+              <article class="grid gap-3 text-sm">
                 <div class="flex min-w-0 items-center justify-between gap-2">
                   <h2 class="min-w-0 text-balance font-medium text-highlighted tabular-nums">
-                    {{ selectedCount }} selected
+                    {{ selectedCount }} {{ selectedCount === 1 ? t('selectedOne') : t('selectedMany') }}
                   </h2>
                   <UButton
                     v-if="aiFurnitureEnabled"
                     color="primary"
                     icon="i-lucide-sparkles"
-                    label="AI build"
+                    :label="t('aiBuild')"
                     size="xs"
                     variant="solid"
                     class="min-h-8 shrink-0 rounded-full px-3 shadow-sm transition-transform duration-150 active:scale-[0.97]"
@@ -745,7 +839,7 @@ if (getCurrentScope()) {
 
                 <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
                   <dt class="self-center text-muted">
-                    Type
+                    {{ t('type') }}
                   </dt>
                   <dd class="min-w-0">
                     <USelect
@@ -759,7 +853,7 @@ if (getCurrentScope()) {
                   </dd>
 
                   <dt class="self-center text-muted">
-                    Width
+                    {{ t('width') }}
                   </dt>
                   <dd class="min-w-0">
                     <div class="flex items-center gap-1">
@@ -768,17 +862,17 @@ if (getCurrentScope()) {
                         type="text"
                         inputmode="decimal"
                         class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
-                        placeholder="mixed"
-                        aria-label="Column width for selected modules in meters"
+                        :placeholder="t('mixed')"
+                        :aria-label="t('columnWidthAria')"
                         @keydown.enter.prevent="onSelectedColumnWidthCommit"
                         @blur="onSelectedColumnWidthCommit"
                       >
-                      <span class="shrink-0 text-muted">m</span>
+                      <span class="shrink-0 text-muted">cm</span>
                     </div>
                   </dd>
 
                   <dt class="self-center text-muted">
-                    Height
+                    {{ t('height') }}
                   </dt>
                   <dd class="min-w-0">
                     <div class="flex items-center gap-1">
@@ -787,18 +881,18 @@ if (getCurrentScope()) {
                         type="text"
                         inputmode="decimal"
                         class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
-                        placeholder="mixed"
-                        aria-label="Selected modules height in meters"
+                        :placeholder="t('mixed')"
+                        :aria-label="t('selectedHeightAria')"
                         @keydown.enter.prevent="onSelectedHeightCommit"
                         @blur="onSelectedHeightCommit"
                       >
-                      <span class="shrink-0 text-muted">m</span>
+                      <span class="shrink-0 text-muted">cm</span>
                     </div>
                   </dd>
 
                   <template v-if="selectedTypeValue === 'drawer'">
                     <dt class="self-center text-muted">
-                      Drawers
+                      {{ t('drawers') }}
                     </dt>
                     <dd class="min-w-0">
                       <input
@@ -806,12 +900,131 @@ if (getCurrentScope()) {
                         type="text"
                         inputmode="numeric"
                         class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
-                        placeholder="mixed"
-                        aria-label="Number of drawers in selected modules"
+                        :placeholder="t('mixed')"
+                        :aria-label="t('selectedDrawerCountAria')"
                         @keydown.enter.prevent="onSelectedDrawerCountCommit"
                         @blur="onSelectedDrawerCountCommit"
                       >
                     </dd>
+                  </template>
+
+                  <template v-if="selectedTypeValue === 'shelf'">
+                    <dt class="self-center text-muted">
+                      {{ t('interiorShelves') }}
+                    </dt>
+                    <dd class="min-w-0">
+                      <input
+                        :value="selectedShelfCountValue"
+                        type="text"
+                        inputmode="numeric"
+                        class="w-full min-w-0 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated disabled:cursor-not-allowed disabled:opacity-50"
+                        :placeholder="t('mixed')"
+                        :aria-label="t('selectedInteriorShelfCountAria')"
+                        :disabled="selectedShelfCountMax === 0"
+                        @keydown.enter.prevent="onSelectedShelfCountCommit"
+                        @blur="onSelectedShelfCountCommit"
+                      >
+                    </dd>
+                  </template>
+
+                  <template v-if="selectedHandleModuleInfos.length > 0">
+                    <dt class="self-center text-muted">
+                      {{ t('handle') }}
+                    </dt>
+                    <dd class="min-w-0">
+                      <div
+                        class="grid grid-cols-3 rounded-md bg-muted p-0.5"
+                        role="group"
+                        :aria-label="t('handle')"
+                      >
+                        <button
+                          type="button"
+                          class="min-h-7 rounded px-2 text-xs font-medium transition-colors"
+                          :class="selectedHandleModeValue === 'none' ? 'bg-elevated text-highlighted shadow-sm' : 'text-muted hover:text-highlighted'"
+                          :aria-pressed="selectedHandleModeValue === 'none'"
+                          @click="updateSelectedHandleMode('none')"
+                        >
+                          {{ t('no') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="min-h-7 rounded px-2 text-xs font-medium transition-colors"
+                          :class="selectedHandleModeValue === 'hole' ? 'bg-elevated text-highlighted shadow-sm' : 'text-muted hover:text-highlighted'"
+                          :aria-pressed="selectedHandleModeValue === 'hole'"
+                          @click="updateSelectedHandleMode('hole')"
+                        >
+                          {{ t('handleHole') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="min-h-7 rounded px-2 text-xs font-medium transition-colors"
+                          :class="selectedHandleModeValue === 'handle' ? 'bg-elevated text-highlighted shadow-sm' : 'text-muted hover:text-highlighted'"
+                          :aria-pressed="selectedHandleModeValue === 'handle'"
+                          @click="updateSelectedHandleMode('handle')"
+                        >
+                          {{ t('yes') }}
+                        </button>
+                      </div>
+                    </dd>
+
+                    <template v-if="selectedHandleModeValue !== 'none'">
+                      <dt class="self-center text-muted">
+                        {{ t('handlePosition') }}
+                      </dt>
+                      <dd class="min-w-0">
+                        <div
+                          class="grid w-full grid-cols-9 gap-0.5 rounded-md bg-muted p-0.5"
+                          role="group"
+                          :aria-label="t('handlePosition')"
+                        >
+                          <button
+                            v-for="option in handlePlacementOptions"
+                            :key="option.key"
+                            type="button"
+                            class="grid min-h-7 min-w-0 place-items-center rounded transition-colors"
+                            :class="selectedHandlePlacementValue === option.key ? 'bg-elevated text-highlighted shadow-sm' : 'text-muted hover:text-highlighted'"
+                            :aria-label="option.label"
+                            :title="option.label"
+                            :aria-pressed="selectedHandlePlacementValue === option.key"
+                            @click="updateSelectedHandlePlacement(option.vertical, option.horizontal)"
+                          >
+                            <UIcon :name="option.icon" class="size-3.5" />
+                          </button>
+                        </div>
+                      </dd>
+
+                      <dt class="self-center text-muted">
+                        {{ t('orientation') }}
+                      </dt>
+                      <dd class="min-w-0">
+                        <div
+                          class="grid grid-cols-2 rounded-md bg-muted p-0.5"
+                          role="group"
+                          :aria-label="t('orientation')"
+                        >
+                          <button
+                            type="button"
+                            class="flex min-h-7 items-center justify-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors"
+                            :class="selectedHandleOrientationValue === 'horizontal' ? 'bg-elevated text-highlighted shadow-sm' : 'text-muted hover:text-highlighted'"
+                            :aria-pressed="selectedHandleOrientationValue === 'horizontal'"
+                            @click="updateSelectedHandleOrientation('horizontal')"
+                          >
+                            <UIcon name="i-lucide-arrow-left-right" class="size-3.5" />
+                            {{ t('handleHorizontal') }}
+                          </button>
+                          <button
+                            type="button"
+                            class="flex min-h-7 items-center justify-center gap-1 rounded px-1.5 text-[11px] font-medium transition-colors"
+                            :class="selectedHandleOrientationValue === 'vertical' ? 'bg-elevated text-highlighted shadow-sm' : 'text-muted hover:text-highlighted'"
+                            :aria-pressed="selectedHandleOrientationValue === 'vertical'"
+                            @click="updateSelectedHandleOrientation('vertical')"
+                          >
+                            <UIcon name="i-lucide-arrow-up-down" class="size-3.5" />
+                            {{ t('handleVertical') }}
+                          </button>
+                        </div>
+                      </dd>
+                    </template>
                   </template>
                 </dl>
 
@@ -820,7 +1033,7 @@ if (getCurrentScope()) {
                   block
                   color="error"
                   icon="i-lucide-trash-2"
-                  label="Delete module"
+                  :label="t('deleteModule')"
                   size="xs"
                   variant="soft"
                   class="justify-self-stretch active:scale-[0.97] transition-transform duration-150"
@@ -828,147 +1041,95 @@ if (getCurrentScope()) {
                 />
               </article>
             </div>
-
-            <div
-              v-else
-              class="grid min-h-0 min-w-0 gap-2"
-            >
-              <button
-                v-if="aiFurnitureEnabled"
-                type="button"
-                class="group flex min-h-10 w-full min-w-0 items-center gap-2 rounded-xl bg-primary px-2.5 py-1.5 text-left text-inverted shadow-md shadow-primary/20 ring-1 ring-inset ring-white/10 transition-[transform,box-shadow,filter] duration-150 ease-out hover:shadow-lg hover:shadow-primary/25 active:scale-[0.97] sm:min-h-14 sm:gap-3 sm:px-3 sm:py-2.5"
-                aria-label="Build furniture with AI"
-                @click="openAiBuilder"
-              >
-                <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-black/15 sm:size-9">
-                  <UIcon
-                    name="i-lucide-sparkles"
-                    class="size-4 transition-transform duration-150 ease-out group-hover:scale-110 sm:size-5"
-                  />
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="block text-xs font-semibold leading-4 text-pretty sm:text-sm sm:leading-5">Build with AI</span>
-                  <span class="hidden truncate text-xs leading-4 opacity-80 sm:block">Describe the cabinet and preview it before applying.</span>
-                </span>
-                <UIcon
-                  name="i-lucide-arrow-right"
-                  class="size-3.5 shrink-0 opacity-80 transition-transform duration-150 ease-out group-hover:translate-x-0.5 sm:size-4"
-                />
-              </button>
-
-              <div
-                class="relative min-h-0 min-w-0 cursor-pointer transition-transform duration-150 active:scale-[0.97]"
-                @click="settingsOpen = true"
-              >
-                <div class="grid h-12 min-w-0 grid-cols-3 gap-1.5 pt-0.5 sm:h-40 sm:gap-2 sm:pt-1">
-                  <article
-                    v-for="field in summaryConfigFields"
-                    :key="field.key"
-                    class="flex min-w-0 flex-col rounded-lg bg-default px-1.5 py-1 shadow-sm sm:px-3 sm:py-2.5"
-                  >
-                    <div class="flex min-w-0 flex-1 flex-col justify-center gap-0.5 p-0.5 sm:gap-2 sm:p-2">
-                      <h3 class="min-w-0 text-[0.55rem] font-medium leading-tight text-muted sm:text-balance sm:text-[0.7rem] sm:leading-snug">
-                        {{ summaryLabel(field) }} ({{ field.unit }})
-                      </h3>
-                      <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0 sm:pb-2">
-                        <span class="min-w-0 text-sm font-extralight leading-none tracking-normal tabular-nums text-highlighted sm:text-[2.75rem]">
-                          {{ formatConfigValue(field) }}
-                        </span>
-                      </div>
-                    </div>
-                  </article>
-                </div>
-
-                <AppDialog
-                  v-model:open="settingsOpen"
-                  title="Project settings"
-                  description="All values apply to the assembly preview and cutlist."
-                >
-                  <div class="flex flex-wrap items-center justify-end gap-1 border-b border-default pb-3">
-                    <UButton
-                      icon="i-lucide-rotate-ccw"
-                      label="Reset"
-                      size="xs"
-                      color="neutral"
-                      variant="ghost"
-                      aria-label="Reset project settings to defaults"
-                      class="active:scale-[0.97] transition-transform duration-150"
-                      @click="resetConfig"
-                    />
-                    <UButton
-                      :icon="copiedConfig ? 'i-lucide-check' : 'i-lucide-copy'"
-                      :label="copiedConfig ? 'Copied' : 'Copy JSON'"
-                      size="xs"
-                      color="neutral"
-                      variant="soft"
-                      aria-label="Copy project settings as JSON"
-                      class="active:scale-[0.97] transition-transform duration-150"
-                      @click="copyConfigJson"
-                    />
-                  </div>
-
-                  <dl class="grid max-h-[min(24rem,55vh)] grid-cols-[1fr_auto] gap-x-3 gap-y-2 overflow-y-auto pr-1 text-xs">
-                    <template
-                      v-for="field in projectDesignerConfigFields"
-                      :key="field.key"
-                    >
-                      <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
-                        <span class="truncate">{{ field.label }}</span>
-                        <UTooltip
-                          :text="field.help"
-                          :delay-duration="100"
-                          :content="{ side: 'left', sideOffset: 6 }"
-                        >
-                          <button
-                            type="button"
-                            class="config-help-icon active:scale-[0.97] transition-transform duration-150"
-                            :aria-label="`${field.label} help`"
-                          >
-                            <UIcon
-                              name="i-lucide-circle-help"
-                              class="size-3.5"
-                            />
-                          </button>
-                        </UTooltip>
-                      </dt>
-                      <dd>
-                        <div class="flex items-center gap-1">
-                          <input
-                            :value="formatConfigValue(field)"
-                            type="text"
-                            inputmode="decimal"
-                            class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
-                            :aria-label="`${field.label} (${field.unit})`"
-                            @keydown.enter.prevent="commitConfigField(field, $event)"
-                            @blur="commitConfigField(field, $event)"
-                          >
-                          <span class="text-muted lowercase">{{ field.unit }}</span>
-                        </div>
-                      </dd>
-                    </template>
-                  </dl>
-
-                  <template #footer="{ close }">
-                    <UButton
-                      label="Done"
-                      color="neutral"
-                      variant="outline"
-                      class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
-                      @click="close()"
-                    />
-                  </template>
-                </AppDialog>
-              </div>
-            </div>
           </div>
         </div>
       </div>
     </div>
 
     <AppDialog
+      v-model:open="settingsOpen"
+      :title="t('projectSettings')"
+      :description="t('projectSettingsDescription')"
+    >
+      <div class="flex flex-wrap items-center justify-end gap-1 border-b border-default pb-3">
+        <UButton
+          icon="i-lucide-rotate-ccw"
+          :label="t('reset')"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          :aria-label="t('resetProjectSettings')"
+          class="active:scale-[0.97] transition-transform duration-150"
+          @click="resetConfig"
+        />
+        <UButton
+          :icon="copiedConfig ? 'i-lucide-check' : 'i-lucide-copy'"
+          :label="copiedConfig ? t('copied') : t('copyJson')"
+          size="xs"
+          color="neutral"
+          variant="soft"
+          :aria-label="t('copyProjectSettingsJson')"
+          class="active:scale-[0.97] transition-transform duration-150"
+          @click="copyConfigJson"
+        />
+      </div>
+
+      <dl class="grid max-h-[min(24rem,55vh)] grid-cols-[1fr_auto] gap-x-3 gap-y-2 overflow-y-auto pr-1 text-xs">
+        <template
+          v-for="field in projectDesignerConfigFields"
+          :key="field.key"
+        >
+          <dt class="flex min-w-0 items-center gap-1 self-center text-muted">
+            <span class="truncate">{{ field.label }}</span>
+            <UTooltip
+              :text="field.help"
+              :delay-duration="100"
+              :content="{ side: 'left', sideOffset: 6 }"
+            >
+              <button
+                type="button"
+                class="config-help-icon active:scale-[0.97] transition-transform duration-150"
+                :aria-label="`${field.label}`"
+              >
+                <UIcon
+                  name="i-lucide-circle-help"
+                  class="size-3.5"
+                />
+              </button>
+            </UTooltip>
+          </dt>
+          <dd>
+            <div class="flex items-center gap-1">
+              <input
+                :value="formatConfigValue(field)"
+                type="text"
+                inputmode="decimal"
+                class="w-20 rounded-md bg-muted px-2 py-1 text-right text-xs tabular-nums text-highlighted shadow-sm outline-none ring-0 transition-colors duration-150 focus:bg-elevated"
+                :aria-label="`${field.label} (${field.unit})`"
+                @keydown.enter.prevent="commitConfigField(field, $event)"
+                @blur="commitConfigField(field, $event)"
+              >
+              <span class="text-muted lowercase">{{ field.unit }}</span>
+            </div>
+          </dd>
+        </template>
+      </dl>
+
+      <template #footer="{ close }">
+        <UButton
+          :label="t('done')"
+          color="neutral"
+          variant="outline"
+          class="w-full min-w-0 justify-center active:scale-[0.97] transition-transform duration-150"
+          @click="close()"
+        />
+      </template>
+    </AppDialog>
+
+    <AppDialog
       v-model:open="aiBuildOpen"
-      title="Build with AI"
-      description="Describe the cabinet you want. You can preview the layout before it replaces the current design."
+      :title="t('buildWithAi')"
+      :description="t('buildWithAiDescription')"
       size="lg"
     >
       <div class="grid gap-4">
@@ -978,7 +1139,7 @@ if (getCurrentScope()) {
               for="ai-build-prompt"
               class="text-sm font-medium text-highlighted"
             >
-              Prompt
+              {{ t('prompt') }}
             </label>
             <span
               class="text-[11px] tabular-nums"
@@ -993,7 +1154,7 @@ if (getCurrentScope()) {
             v-model="aiPrompt"
             rows="5"
             :maxlength="AI_FURNITURE_PROMPT_MAX_LENGTH"
-            placeholder="e.g. 1.8m wide media console, three columns, drawers in the middle, doors on both sides"
+            :placeholder="t('promptPlaceholder')"
             :disabled="aiLoading"
             class="block min-h-36 w-full resize-y rounded-lg bg-default px-3 py-3 text-sm leading-6 text-highlighted shadow-sm outline-none ring-1 ring-default/70 transition-[background-color,box-shadow] duration-150 placeholder:text-muted focus:bg-elevated focus:ring-2 focus:ring-primary/70 disabled:cursor-not-allowed disabled:opacity-60"
             @keydown.meta.enter.prevent="generateAiFurniture"
@@ -1032,10 +1193,10 @@ if (getCurrentScope()) {
         />
         <div class="min-w-0">
           <p class="text-sm font-medium text-highlighted">
-            Generating layout
+            {{ t('generatingLayout') }}
           </p>
           <p class="text-pretty text-xs text-muted">
-            Checking dimensions, modules, and hardware clearances.
+            {{ t('generatingLayoutDescription') }}
           </p>
         </div>
       </div>
@@ -1048,11 +1209,12 @@ if (getCurrentScope()) {
           <ProjectPreview
             :columns="aiDraft.doc.columns"
             :config="aiDraft.doc.config"
+            :public-style="publicStyle"
           />
         </div>
         <div class="grid gap-2 text-xs">
           <p class="text-[11px] font-semibold uppercase tracking-normal text-muted">
-            Preview summary
+            {{ t('previewSummary') }}
           </p>
           <p class="text-pretty text-highlighted">
             {{ aiDraft.summary }}
@@ -1063,14 +1225,14 @@ if (getCurrentScope()) {
               variant="soft"
               size="sm"
             >
-              {{ aiDraftColumnCount }} columns
+              {{ aiDraftColumnCount }} {{ t('columns') }}
             </UBadge>
             <UBadge
               color="neutral"
               variant="soft"
               size="sm"
             >
-              {{ aiDraftModuleCount }} modules
+              {{ aiDraftModuleCount }} {{ t('modules') }}
             </UBadge>
           </div>
           <ul
@@ -1091,7 +1253,7 @@ if (getCurrentScope()) {
       <template #footer="{ close }">
         <div class="grid w-full grid-cols-2 gap-2">
           <UButton
-            :label="aiDraft ? 'Close' : 'Cancel'"
+            :label="aiDraft ? t('close') : t('cancel')"
             color="neutral"
             variant="outline"
             class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
@@ -1100,7 +1262,7 @@ if (getCurrentScope()) {
           />
           <UButton
             v-if="!aiDraft"
-            label="Generate layout"
+            :label="t('generateLayout')"
             icon="i-lucide-sparkles"
             class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
             :loading="aiLoading"
@@ -1109,7 +1271,7 @@ if (getCurrentScope()) {
           />
           <UButton
             v-else
-            label="Apply"
+            :label="t('apply')"
             icon="i-lucide-check"
             class="w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
             :disabled="aiLoading"
@@ -1119,7 +1281,7 @@ if (getCurrentScope()) {
         <UButton
           v-if="aiDraft"
           block
-          label="Regenerate"
+          :label="t('regenerate')"
           icon="i-lucide-refresh-cw"
           color="neutral"
           variant="soft"

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { uiText as t } from '~~/shared/i18n/ui-copy'
+
 const emit = defineEmits<{
   (e: 'success'): void
 }>()
@@ -14,12 +16,12 @@ const errorMsg = ref('')
 const loading = ref(false)
 
 const title = computed(() =>
-  step.value === 'email' ? 'Sign in' : 'Check your email',
+  step.value === 'email' ? t('authEmailTitle') : t('authCodeTitle'),
 )
 const description = computed(() =>
   step.value === 'email'
-    ? 'We’ll email you a one-time code.'
-    : 'Enter the 6-digit code we just sent.',
+    ? t('authEmailDescription')
+    : t('authCodeDescription'),
 )
 const stepIndex = computed(() => (step.value === 'email' ? 1 : 2))
 
@@ -37,7 +39,7 @@ async function submitEmail() {
   errorMsg.value = ''
   const e = email.value.trim()
   if (!e) {
-    errorMsg.value = 'Enter your email address.'
+    errorMsg.value = t('enterEmailAddress')
     return
   }
   loading.value = true
@@ -47,7 +49,7 @@ async function submitEmail() {
     step.value = 'code'
   }
   catch (err: any) {
-    errorMsg.value = err?.statusMessage || err?.message || 'Something went wrong.'
+    errorMsg.value = err?.statusMessage || err?.message || t('somethingWentWrong')
   }
   finally {
     loading.value = false
@@ -67,7 +69,7 @@ async function submitCode() {
     emit('success')
   }
   catch (err: any) {
-    errorMsg.value = err?.statusMessage || err?.message || 'Something went wrong.'
+    errorMsg.value = err?.statusMessage || err?.message || t('somethingWentWrong')
   }
   finally {
     loading.value = false
@@ -94,7 +96,7 @@ function resendCode() {
           :aria-valuenow="stepIndex"
           aria-valuemin="1"
           aria-valuemax="2"
-          :aria-label="`Step ${stepIndex} of 2`"
+          :aria-label="t('authStepAria', { step: stepIndex })"
         >
           <span
             class="h-1 flex-1 rounded-full bg-primary transition-colors duration-300"
@@ -135,7 +137,7 @@ function resendCode() {
 
       <template v-if="step === 'email'">
         <UFormField
-          label="Email"
+          :label="t('email')"
           class="w-full"
         >
           <UInput
@@ -153,7 +155,7 @@ function resendCode() {
       <template v-else>
         <div class="flex items-baseline justify-between gap-2">
           <p class="truncate text-sm text-muted">
-            Sent to
+            {{ t('sentTo') }}
             <span class="font-medium text-highlighted">{{ email.trim() }}</span>
           </p>
           <UButton
@@ -161,12 +163,12 @@ function resendCode() {
             color="primary"
             size="xs"
             class="shrink-0 px-0"
-            label="Change"
+            :label="t('change')"
             @click="resendCode"
           />
         </div>
         <UFormField
-          label="Verification code"
+          :label="t('verificationCode')"
           class="w-full"
         >
           <UInput
@@ -187,7 +189,7 @@ function resendCode() {
     <template #footer="{ close }">
       <div class="grid w-full grid-cols-3 gap-2">
         <UButton
-          label="Cancel"
+          :label="t('cancel')"
           type="button"
           color="neutral"
           variant="ghost"
@@ -197,7 +199,7 @@ function resendCode() {
         />
         <UButton
           v-if="step === 'email'"
-          label="Send code"
+          :label="t('sendCode')"
           type="button"
           class="col-span-2 w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="loading"
@@ -205,7 +207,7 @@ function resendCode() {
         />
         <UButton
           v-else
-          label="Sign in"
+          :label="t('signIn')"
           type="button"
           class="col-span-2 w-full min-h-10 min-w-0 justify-center transition-transform active:scale-[0.97]"
           :loading="loading"

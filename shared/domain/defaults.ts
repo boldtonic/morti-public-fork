@@ -1,4 +1,5 @@
-import type { CameraState, FurnitureColumn, FurnitureConfig, FurnitureModule, MaterialAssignment, ModuleType, PublicStyle } from './types'
+import type { CameraState, FurnitureColumn, FurnitureConfig, FurnitureModule, HandleOrientation, MaterialAssignment, ModuleType, PublicStyle } from './types'
+import { moduleHandleHorizontalPosition, moduleHandleMode } from './handles'
 import { CUSTOM_MATERIAL_ID, DEFAULT_MATERIAL_ASSIGNMENTS, findPreset, MATERIAL_PRESETS } from './materials'
 
 // Default furniture config (Qe in compiled). All values in metres.
@@ -53,6 +54,15 @@ export const DEFAULT_SHELF_HEIGHT = 0.3
 export const DEFAULT_DRAWER_COUNT = 1
 export const DRAWER_COUNT_MIN = 1
 export const DRAWER_COUNT_MAX = 32
+export const DEFAULT_HANDLE_POSITION = 'top' as const
+
+export function defaultHandleOrientation(type: ModuleType): HandleOrientation {
+  return type === 'drawer' ? 'horizontal' : 'vertical'
+}
+
+export function moduleHasFront(type: ModuleType): boolean {
+  return type !== 'shelf'
+}
 
 export function snapConfig(c: Partial<FurnitureConfig>): FurnitureConfig {
   const r = { ...DEFAULT_FURNITURE_CONFIG, ...c }
@@ -66,6 +76,12 @@ export function snapConfig(c: Partial<FurnitureConfig>): FurnitureConfig {
 export function defaultModule(type: ModuleType): FurnitureModule {
   const m: FurnitureModule = { id: cryptoRandomId(), type, height: DEFAULT_SHELF_HEIGHT }
   if (type === 'drawer') m.drawerCount = DEFAULT_DRAWER_COUNT
+  if (moduleHasFront(type)) {
+    m.handleMode = moduleHandleMode(m)
+    m.handlePosition = DEFAULT_HANDLE_POSITION
+    m.handleHorizontalPosition = moduleHandleHorizontalPosition(m)
+    m.handleOrientation = defaultHandleOrientation(type)
+  }
   return m
 }
 
@@ -91,26 +107,30 @@ export const DEFAULT_PUBLIC_STYLE: PublicStyle = {
   renderStyle: 'rendered',
   technical: {
     colors: {
-      background: '#1c1917',
-      grid: '#78716c',
-      outlines: '#f59e0b',
-      fills: '#1c1917',
+      background: '#f5f5f7',
+      grid: '#c7c7cc',
+      outlines: '#9a7a50',
+      fills: '#eeeeef',
     },
   },
   rendered: {
     colors: {
-      background: '#4d4a49',
-      grid: '#a8a29e',
-      defaultPanel: '#aaaaaa',
-      verticalSide: '#2d8ed1',
-      horizontalDeck: '#26bf67',
-      moduleFront: '#ffc21c',
+      background: '#e5e5e7',
+      grid: '#b9b9bf',
+      defaultPanel: '#f4f3ef',
+      verticalSide: '#f4f3ef',
+      horizontalDeck: '#f4f3ef',
+      moduleFront: '#d8d9dc',
     },
     materials: {
       carcass: defaultAssignment('carcass'),
       sides:   defaultAssignment('sides'),
       deck:    defaultAssignment('deck'),
       fronts:  defaultAssignment('fronts'),
+    },
+    handles: {
+      type: 'auto',
+      finish: 'graphite',
     },
   },
 }
@@ -193,6 +213,21 @@ function normalizeRenderedMaterials(input: unknown): PublicStyle['rendered']['ma
   }
 }
 
+function normalizeRenderedHandles(input: unknown): PublicStyle['rendered']['handles'] {
+  const source = input && typeof input === 'object' ? input as Partial<PublicStyle['rendered']['handles']> : {}
+  const fallback = DEFAULT_PUBLIC_STYLE.rendered.handles
+  return {
+    type: source.type === 'knob'
+      || source.type === 'square-knob'
+      || source.type === 'bar'
+      || source.type === 'square-bar'
+      || source.type === 'auto'
+      ? source.type
+      : fallback.type,
+    finish: source.finish === 'nickel' || source.finish === 'brass' || source.finish === 'graphite' ? source.finish : fallback.finish,
+  }
+}
+
 export function normalizePublicStyle(input?: PublicStyleInput | null): PublicStyle {
   const source = input && typeof input === 'object' ? input : null
   return {
@@ -203,6 +238,7 @@ export function normalizePublicStyle(input?: PublicStyleInput | null): PublicSty
     rendered: {
       colors: normalizeRenderedColors(source?.rendered?.colors),
       materials: normalizeRenderedMaterials((source?.rendered as { materials?: unknown } | null | undefined)?.materials),
+      handles: normalizeRenderedHandles((source?.rendered as { handles?: unknown } | null | undefined)?.handles),
     },
   }
 }

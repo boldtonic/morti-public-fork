@@ -29,7 +29,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      htmlAttrs: { lang: 'en' },
+      htmlAttrs: { lang: 'es' },
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
@@ -46,10 +46,10 @@ export default defineNuxtConfig({
   },
 
   colorMode: {
-    preference: 'dark',
-    fallback: 'dark',
+    preference: 'light',
+    fallback: 'light',
     classSuffix: '',
-    storageKey: 'nuxt-color-mode',
+    storageKey: 'tenon-color-mode',
   },
 
   icon: {
@@ -106,6 +106,10 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: { include: [] },
+    // Allow temporary Cloudflare Quick Tunnel hostnames during local demos.
+    server: {
+      allowedHosts: ['.trycloudflare.com', '.ts.net'],
+    },
   },
 
   nitro: {

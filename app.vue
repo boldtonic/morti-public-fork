@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { uiText as t } from '~~/shared/i18n/ui-copy'
+
 useHead({
-  htmlAttrs: { lang: 'en' },
+  htmlAttrs: { lang: 'es' },
   meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
   link: [
     { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
@@ -11,9 +13,9 @@ useHead({
 
 useSeoMeta({
   title: 'Morti',
-  description: 'Design furniture with cloud sync, publishing, and shareable Yjs projects.',
+  description: t('appDescription'),
   ogTitle: 'Morti',
-  ogDescription: 'Design furniture with cloud sync, publishing, and shareable Yjs projects.',
+  ogDescription: t('appDescription'),
   twitterCard: 'summary',
 })
 </script>

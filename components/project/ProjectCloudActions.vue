@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CloudProjectRecord, LocalProjectRow, PublicStyle } from '~~/shared/domain/types'
+import { uiText as t } from '~~/shared/i18n/ui-copy'
 
 interface Props {
   project: LocalProjectRow
@@ -55,7 +56,7 @@ function onUnpublished() {
           color="neutral"
           variant="ghost"
           icon="i-lucide-refresh-cw"
-          label="Retry"
+          :label="t('retry')"
           class="h-10 min-h-10 shrink-0 rounded-full px-3 transition-transform active:scale-[0.97]"
           @click="emit('retryDraftSync')"
         />
@@ -65,7 +66,7 @@ function onUnpublished() {
         color="neutral"
         variant="solid"
         icon="i-lucide-square-arrow-up"
-        :label="isPublished ? 'Published' : 'Publish'"
+        :label="isPublished ? t('published') : t('publish')"
         class="h-10 min-h-10 shrink-0 rounded-full px-4 text-xs font-semibold shadow-md transition-transform active:scale-[0.97]"
         @click="open = true"
       />

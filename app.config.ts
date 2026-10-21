@@ -2,11 +2,11 @@ export default defineAppConfig({
   ui: {
     colors: {
       primary: 'morti',
-      neutral: 'morti',
+      neutral: 'old-neutral',
       success: 'green',
       warning: 'morti',
       error: 'red',
-      info: 'morti',
+      info: 'old-neutral',
     },
     modal: {
       variants: {

@@ -100,7 +100,7 @@ DATABASE_URL=postgres://morti:morti_dev_password@localhost:5432/morti
 LOCAL_AUTH_BYPASS=true
 ```
 
-`LOCAL_AUTH_BYPASS=true` only works in Nuxt dev mode on localhost. It lets contributors use the app without Postmark while developing.
+`LOCAL_AUTH_BYPASS=true` only works in Nuxt dev mode on localhost. It provisions a local admin user so contributors can exercise projects, publishing, and demo administration without Postmark while developing.
 
 ## Local Docker
 
@@ -228,9 +228,15 @@ Set `DEMO_OWNER_ID` and `DEMO_OWNER_EMAIL` if you need a specific demo owner row
 ## Development Checks
 
 ```bash
+npm audit --audit-level=critical
 npm run typecheck
+npm test
 npm run build
+npm --prefix .output/server install --package-lock-only --ignore-scripts
+npm --prefix .output/server audit --omit=dev --audit-level=high
 ```
+
+The first audit covers the complete source and build dependency tree. The second audits the exact Nitro server artifact that is deployed, while avoiding false release blocks from currently unpatched Nuxt development-tool advisories. The same release gate runs in GitHub Actions. See `docs/release-0.1.md` for the 0.1 manual product checklist and release steps.
 
 ## Data Notes
 
@@ -238,6 +244,10 @@ npm run build
 - The IndexedDB database name is still `madera` for backwards compatibility with older local projects.
 - Cloud snapshots are stored in Postgres as binary Yjs updates.
 - Published project routes only serve records with `visibility = public`, a non-deleted row, and a snapshot.
+
+## Manufacturing Status
+
+Cutlist, machining operations, and generated measurements are preview features in 0.1. Independently verify dimensions, joinery, edge treatment, hardware, tolerances, and material constraints before ordering panels or manufacturing furniture.
 
 ## Security Notes
 

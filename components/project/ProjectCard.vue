@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FurnitureColumn, FurnitureConfig } from '~~/shared/domain/types'
+import { ACTIVE_UI_LOCALE, uiText as t } from '~~/shared/i18n/ui-copy'
 
 interface CardProject {
   id: string
@@ -48,7 +49,7 @@ const cardTitleId = computed(() => `project-card-title-${props.project.id}`)
 const formattedDate = computed(() => {
   const date = new Date(props.project.updatedAt)
   if (!Number.isFinite(date.getTime())) return ''
-  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+  return date.toLocaleDateString(ACTIVE_UI_LOCALE === 'es' ? 'es-ES' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })
 })
 
 async function exportProject() {
@@ -58,28 +59,28 @@ async function exportProject() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${(props.project.name.trim() || 'project').replace(/[<>:"/\\|?*]/g, '-')}.morti`
+  a.download = `${(props.project.name.trim() || t('defaultExportName')).replace(/[<>:"/\\|?*]/g, '-')}.morti`
   a.rel = 'noopener'
   a.click()
   URL.revokeObjectURL(url)
 }
 
 const menuItems = computed(() => [
-  { label: 'Change name', icon: 'i-lucide-text-cursor-input', onSelect: () => emit('rename', props.project) },
-  { label: 'Export', icon: 'i-lucide-download', onSelect: () => { void exportProject() } },
-  { label: 'Duplicate', icon: 'i-lucide-copy-plus', onSelect: () => emit('duplicate', props.project) },
+  { label: t('changeName'), icon: 'i-lucide-text-cursor-input', onSelect: () => emit('rename', props.project) },
+  { label: t('export'), icon: 'i-lucide-download', onSelect: () => { void exportProject() } },
+  { label: t('duplicate'), icon: 'i-lucide-copy-plus', onSelect: () => emit('duplicate', props.project) },
   ...(props.adminActions
     ? [
         { type: 'separator' as const },
         {
-          label: props.demo ? 'Remove from demos' : 'Set as demo',
+          label: props.demo ? t('removeFromDemos') : t('setAsDemo'),
           icon: props.demo ? 'i-lucide-circle-minus' : 'i-lucide-sparkles',
           onSelect: () => emit('toggleDemo', props.project.id),
         },
       ]
     : []),
   { type: 'separator' as const },
-  { label: 'Delete', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: () => emit('delete', props.project.id) },
+  { label: t('delete'), icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: () => emit('delete', props.project.id) },
 ])
 </script>
 
@@ -111,7 +112,7 @@ const menuItems = computed(() => [
         >
           <UBadge
             v-if="published"
-            label="Published"
+            :label="t('published')"
             color="neutral"
             variant="solid"
             size="sm"
@@ -120,7 +121,7 @@ const menuItems = computed(() => [
           />
           <UBadge
             v-if="demo"
-            label="Demo"
+            :label="t('demo')"
             color="neutral"
             variant="solid"
             size="sm"
@@ -160,7 +161,7 @@ const menuItems = computed(() => [
               'text-muted transition-transform hover:text-highlighted active:scale-[0.97]',
               isPinned && 'text-highlighted ring-1 ring-[color:color-mix(in_oklch,var(--color-morti-400)_55%,transparent)]',
             ]"
-            :aria-label="isPinned ? 'Unpin project' : 'Pin project'"
+            :aria-label="isPinned ? t('unpinProject') : t('pinProject')"
             :aria-pressed="isPinned"
             @click.stop.prevent="emit('togglePin', project.id)"
           />
@@ -175,7 +176,7 @@ const menuItems = computed(() => [
               variant="ghost"
               size="xs"
               class="text-muted transition-transform hover:text-highlighted active:scale-[0.97]"
-              aria-label="Project actions"
+              :aria-label="t('projectActions')"
             />
           </UDropdownMenu>
         </div>
