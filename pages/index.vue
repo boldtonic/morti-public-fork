@@ -178,6 +178,23 @@ function triggerImport() {
   importInputRef.value?.click()
 }
 
+function importFailureMessage(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code
+  if (code === 'FILE_TOO_LARGE') return t('importFileTooLarge')
+  if (code === 'UNSUPPORTED_FORMAT_VERSION' || code === 'UNSUPPORTED_DESIGN_SCHEMA_VERSION') {
+    return t('importNewerVersion')
+  }
+  if (
+    code === 'INVALID_JSON'
+    || code === 'INVALID_ENVELOPE'
+    || code === 'INVALID_BASE64'
+    || code === 'INVALID_YJS_UPDATE'
+  ) {
+    return t('importDamagedFile')
+  }
+  return (error as { message?: string } | null)?.message ?? t('importFailed')
+}
+
 async function importProject(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] ?? null
@@ -190,7 +207,7 @@ async function importProject(event: Event) {
     await navigateTo(`/project/${row.id}`)
   }
   catch (err: unknown) {
-    importError.value = (err as { message?: string } | null)?.message ?? t('importFailed')
+    importError.value = importFailureMessage(err)
   }
 }
 

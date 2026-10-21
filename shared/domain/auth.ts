@@ -10,7 +10,7 @@ export function createLocalAuthBypassUser(): AuthUser {
     email: LOCAL_AUTH_BYPASS_EMAIL,
     verified: true,
     email_validated_at: LOCAL_AUTH_BYPASS_TIMESTAMP,
-    is_admin: false,
+    is_admin: true,
     created: LOCAL_AUTH_BYPASS_TIMESTAMP,
     updated: LOCAL_AUTH_BYPASS_TIMESTAMP,
   }

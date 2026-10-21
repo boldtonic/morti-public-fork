@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CameraState, CloudProjectRecord, LocalProjectRow, PublicStyle, ViewMode } from '~~/shared/domain/types'
+import { DesignDocLoadError } from '~/composables/useDesignDoc'
 import { DEFAULT_CAMERA_STATE, DEFAULT_FURNITURE_CONFIG, normalizePublicStyle } from '~~/shared/domain/defaults'
 import { uiText as t } from '~~/shared/i18n/ui-copy'
 import { replaceFurnitureDoc } from '~~/shared/yjs/doc'
@@ -40,6 +41,9 @@ const {
 // --- Load local project + design doc ---
 const project = ref<LocalProjectRow | null>(null)
 const loading = ref(true)
+const projectLoadError = ref('')
+const corruptProjectUpdate = shallowRef<Uint8Array | null>(null)
+const recoveryNotice = ref('')
 const cloudRecord = ref<CloudProjectRecord | null>(null)
 const CLOUD_RECORD_FRESH_MS = 4000
 const cloudRecordMutatedAt = ref(0)
@@ -232,9 +236,22 @@ async function loadProject(projectId: string) {
   disposeProjectHandles()
   resetEditorUi()
   cloudRecord.value = null
+  projectLoadError.value = ''
+  corruptProjectUpdate.value = null
+  recoveryNotice.value = ''
   demoToggleError.value = ''
   deleteError.value = ''
-  const local = await getLocalProject(projectId)
+  let local: LocalProjectRow | null
+  try {
+    local = await getLocalProject(projectId) ?? null
+  }
+  catch {
+    if (seq !== loadSeq || projectId !== id.value) return
+    project.value = null
+    projectLoadError.value = t('projectLoadFailed')
+    loading.value = false
+    return
+  }
   if (seq !== loadSeq || projectId !== id.value) return
   project.value = local ?? null
   if (!local) {
@@ -242,12 +259,27 @@ async function loadProject(projectId: string) {
     return
   }
 
-  designHandle = await useDesignDoc(projectId)
+  try {
+    designHandle = await useDesignDoc(projectId)
+  }
+  catch (error) {
+    if (seq !== loadSeq || projectId !== id.value) return
+    if (error instanceof DesignDocLoadError) {
+      projectLoadError.value = t('projectLoadCorrupt')
+      corruptProjectUpdate.value = error.originalUpdateBytes
+    }
+    else {
+      projectLoadError.value = t('projectLoadFailed')
+    }
+    loading.value = false
+    return
+  }
   if (seq !== loadSeq || projectId !== id.value) {
     designHandle.dispose()
     designHandle = null
     return
   }
+  if (designHandle.recovery) recoveryNotice.value = t('projectRecoveredMessage')
   docRef.value = designHandle.doc
   undoFn.value = designHandle.undo
   redoFn.value = designHandle.redo
@@ -514,6 +546,16 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+function downloadCorruptProjectData() {
+  const bytes = corruptProjectUpdate.value
+  if (!bytes || !import.meta.client) return
+  const copy = bytes.slice()
+  downloadBlob(
+    new Blob([copy.buffer], { type: 'application/octet-stream' }),
+    `${safeFileName()}.recovery.yjs`,
+  )
+}
+
 async function exportProject() {
   if (!project.value || !docRef.value || !import.meta.client) return
   const blob = exportDoc(docRef.value as Parameters<typeof exportDoc>[0])
@@ -767,6 +809,34 @@ const canvasChromeTeleportSelector = computed(() =>
             />
           </div>
 
+          <div
+            v-else-if="projectLoadError"
+            class="flex h-full flex-col items-center justify-center gap-4 px-6"
+          >
+            <UAlert
+              color="error"
+              variant="soft"
+              :title="t('projectLoadErrorTitle')"
+              :description="projectLoadError"
+              class="w-full max-w-lg"
+            />
+            <div class="flex flex-wrap items-center justify-center gap-2">
+              <UButton
+                v-if="corruptProjectUpdate"
+                icon="i-lucide-download"
+                color="neutral"
+                variant="outline"
+                :label="t('downloadRecoveryData')"
+                @click="downloadCorruptProjectData"
+              />
+              <UButton
+                to="/"
+                icon="i-lucide-arrow-left"
+                :label="t('backToProjects')"
+              />
+            </div>
+          </div>
+
           <template v-else-if="project">
             <div
               v-if="userNeedsEmailVerification"
@@ -981,6 +1051,14 @@ const canvasChromeTeleportSelector = computed(() =>
             />
           </div>
         </div>
+        <UAlert
+          v-if="recoveryNotice"
+          color="warning"
+          variant="soft"
+          :title="t('projectRecoveredTitle')"
+          :description="recoveryNotice"
+          class="pointer-events-auto max-w-md"
+        />
         <UAlert
           v-if="demoToggleError"
           color="error"

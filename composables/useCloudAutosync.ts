@@ -6,8 +6,10 @@ import { readFurnitureDoc } from '~~/shared/yjs/doc'
 
 const AUTOSYNC_DEBOUNCE_MS = 1500
 
-// Module-scoped per-projectId last-uploaded fingerprint cache.
-const lastUploadedByProject: Map<string, string> = new Map()
+// Cache uploads by their actual cloud destination. A local project can be
+// opened by different users, and each user can resolve it to a different
+// cloud record.
+const lastUploadedByCloudTarget: Map<string, string> = new Map()
 type SyncStatus = 'idle' | 'syncing' | 'synced' | 'offline' | 'error'
 
 interface UseCloudAutosyncArgs {
@@ -17,20 +19,35 @@ interface UseCloudAutosyncArgs {
 }
 
 export function useCloudAutosync({ projectId, doc, project }: UseCloudAutosyncArgs) {
-  const { isCloudAuthed } = useAuth()
+  const { user, isCloudAuthed } = useAuth()
   const { ensureCloudProject, fetchSnapshotBytes, uploadSnapshotBytes } = useCloudProjects()
   const { putDesignSnapshot, setLocalProjectCloudId } = useLocalProjects()
   const syncStatus = ref<SyncStatus>('idle')
   const lastSyncError = ref<string | null>(null)
+  const cloudIdentity = computed(() => isCloudAuthed.value ? user.value?.id ?? null : null)
 
   let timer: ReturnType<typeof setTimeout> | null = null
   let disposed = false
   let syncChain = Promise.resolve()
-  let remoteMerged = false
+  let identityRevision = 0
+  let mergedCloudTarget: string | null = null
+  let stopIdentityWatch: (() => void) | null = null
+
+  function cloudTargetKey(userId: string, recordId: string): string {
+    return JSON.stringify([userId, recordId, projectId])
+  }
+
+  function isCurrentIdentity(userId: string, revision: number): boolean {
+    return !disposed
+      && identityRevision === revision
+      && cloudIdentity.value === userId
+  }
 
   async function runSync(): Promise<void> {
     if (disposed) return
-    if (!isCloudAuthed.value) {
+    const userId = cloudIdentity.value
+    const revision = identityRevision
+    if (!userId) {
       syncStatus.value = 'idle'
       lastSyncError.value = null
       return
@@ -51,28 +68,37 @@ export function useCloudAutosync({ projectId, doc, project }: UseCloudAutosyncAr
     lastSyncError.value = null
     try {
       const record = await ensureCloudProject(currentProject)
+      if (!isCurrentIdentity(userId, revision)) return
+
+      const targetKey = cloudTargetKey(userId, record.id)
       await setLocalProjectCloudId(projectId, record.id)
-      if (!remoteMerged) {
+      if (!isCurrentIdentity(userId, revision)) return
+
+      if (mergedCloudTarget !== targetKey) {
         const remote = await fetchSnapshotBytes(record)
+        if (!isCurrentIdentity(userId, revision)) return
         if (remote && remote.byteLength > 0) {
           Y.applyUpdate(doc, remote)
           const merged = Y.encodeStateAsUpdate(doc)
           await putDesignSnapshot(projectId, merged)
+          if (!isCurrentIdentity(userId, revision)) return
         }
-        remoteMerged = true
+        mergedCloudTarget = targetKey
       }
       const snapshot = readFurnitureDoc(doc)
       const fp = getProjectFingerprint({ columns: snapshot.columns, config: snapshot.config })
-      if (lastUploadedByProject.get(projectId) === fp) {
+      if (lastUploadedByCloudTarget.get(targetKey) === fp) {
         syncStatus.value = 'synced'
         return
       }
       const update = Y.encodeStateAsUpdate(doc)
       await uploadSnapshotBytes(record.id, projectId, update)
-      lastUploadedByProject.set(projectId, fp)
+      if (!isCurrentIdentity(userId, revision)) return
+      lastUploadedByCloudTarget.set(targetKey, fp)
       syncStatus.value = 'synced'
     }
     catch (err: unknown) {
+      if (!isCurrentIdentity(userId, revision)) return
       syncStatus.value = 'error'
       lastSyncError.value = (err as { message?: string } | null)?.message ?? 'Sync failed'
     }
@@ -99,11 +125,14 @@ export function useCloudAutosync({ projectId, doc, project }: UseCloudAutosyncAr
   doc.on('update', onUpdate)
 
   function dispose() {
+    if (disposed) return
     disposed = true
     if (timer) {
       clearTimeout(timer)
       timer = null
     }
+    stopIdentityWatch?.()
+    stopIdentityWatch = null
     doc.off('update', onUpdate)
     if (import.meta.client) {
       window.removeEventListener('online', retrySync)
@@ -119,7 +148,22 @@ export function useCloudAutosync({ projectId, doc, project }: UseCloudAutosyncAr
     window.addEventListener('online', retrySync)
     window.addEventListener('focus', retrySync)
   }
-  void syncNow()
+
+  stopIdentityWatch = watch(
+    cloudIdentity,
+    (nextIdentity) => {
+      identityRevision += 1
+      mergedCloudTarget = null
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      syncStatus.value = 'idle'
+      lastSyncError.value = null
+      if (nextIdentity) void syncNow()
+    },
+    { immediate: true, flush: 'sync' },
+  )
 
   if (getCurrentScope()) onScopeDispose(dispose)
 

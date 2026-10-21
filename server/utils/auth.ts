@@ -56,6 +56,24 @@ export function getLocalAuthBypassUser(): AuthUser {
   return createLocalAuthBypassUser()
 }
 
+async function ensureLocalAuthBypassUser(): Promise<AuthUser> {
+  const user = getLocalAuthBypassUser()
+  await dbQuery(
+    `
+      INSERT INTO users (id, email, email_normalized, email_verified_at, is_admin)
+      VALUES ($1, $2, $3, now(), true)
+      ON CONFLICT (id) DO UPDATE
+      SET email = EXCLUDED.email,
+          email_normalized = EXCLUDED.email_normalized,
+          email_verified_at = COALESCE(users.email_verified_at, now()),
+          is_admin = true,
+          updated_at = now()
+    `,
+    [user.id, user.email, user.email.toLowerCase()],
+  )
+  return user
+}
+
 export function authUserFromRow(row: UserRow): AuthUser {
   const verifiedAt = iso(row.email_verified_at)
   return {
@@ -126,6 +144,7 @@ export async function getCurrentUser(event: H3Event): Promise<AuthUser | null> {
 }
 
 export async function requireUser(event: H3Event): Promise<AuthUser> {
+  if (isLocalAuthBypassAllowed(event)) return await ensureLocalAuthBypassUser()
   const user = await getCurrentUser(event)
   if (!user) {
     throw createError({

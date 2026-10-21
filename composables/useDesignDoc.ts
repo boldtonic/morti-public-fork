@@ -1,4 +1,5 @@
 import * as Y from 'yjs'
+import { computed, ref } from 'vue'
 import type { FurnitureDoc } from '~~/shared/domain/types'
 import { ensureInitialized, getFurnitureMap, readFurnitureDoc } from '~~/shared/yjs/doc'
 import { STORES, idbBoundedRange, idbGet, idbPut } from '~~/shared/idb/morti-db'
@@ -10,16 +11,108 @@ interface DesignStateRow {
   updatedAt?: string
 }
 
-interface UndoCheckpointRow {
+export interface DesignCheckpointRow {
   projectId: string
   seq: number
   createdAt: number
-  snapshot: Uint8Array
+  snapshot: ArrayBuffer | Uint8Array
+}
+
+export interface DesignDocRecoveryInfo {
+  source: 'checkpoint'
+  checkpointSeq: number
+  checkpointCreatedAt: number
+  skippedNewerCheckpoints: number
+}
+
+export interface DesignDocLoadResult {
+  doc: Y.Doc
+  recovery: DesignDocRecoveryInfo | null
+}
+
+export class DesignDocLoadError extends Error {
+  readonly code = 'DESIGN_UPDATE_CORRUPT'
+  readonly projectId: string
+  readonly originalUpdateBytes: Uint8Array
+  readonly attemptedCheckpointCount: number
+
+  constructor(
+    projectId: string,
+    originalUpdateBytes: Uint8Array,
+    attemptedCheckpointCount: number,
+    cause?: unknown,
+  ) {
+    super(
+      attemptedCheckpointCount > 0
+        ? `No se pudo abrir el proyecto ${projectId}: la copia principal y ${attemptedCheckpointCount} checkpoints estan corruptos.`
+        : `No se pudo abrir el proyecto ${projectId}: la copia principal esta corrupta y no hay checkpoints validos.`,
+      { cause },
+    )
+    this.name = 'DesignDocLoadError'
+    this.projectId = projectId
+    this.originalUpdateBytes = new Uint8Array(originalUpdateBytes)
+    this.attemptedCheckpointCount = attemptedCheckpointCount
+  }
 }
 
 const SNAPSHOT_DEBOUNCE_MS = 400
 const CHECKPOINT_DEBOUNCE_MS = 220
 const CHECKPOINT_CAP = 100
+
+function asBytes(value: ArrayBuffer | Uint8Array): Uint8Array {
+  return value instanceof Uint8Array ? new Uint8Array(value) : new Uint8Array(value.slice(0))
+}
+
+function createDocFromUpdate(update: ArrayBuffer | Uint8Array): Y.Doc {
+  const doc = new Y.Doc()
+  try {
+    Y.applyUpdate(doc, asBytes(update))
+    ensureInitialized(doc)
+    readFurnitureDoc(doc)
+    return doc
+  }
+  catch (error) {
+    doc.destroy()
+    throw error
+  }
+}
+
+export function loadDesignDocFromUpdates(
+  projectId: string,
+  originalUpdate: ArrayBuffer | Uint8Array,
+  checkpoints: DesignCheckpointRow[],
+): DesignDocLoadResult {
+  const originalUpdateBytes = asBytes(originalUpdate)
+  try {
+    return { doc: createDocFromUpdate(originalUpdateBytes), recovery: null }
+  }
+  catch (primaryError) {
+    const newestFirst = checkpoints
+      .filter(checkpoint => checkpoint.projectId === projectId)
+      .sort((a, b) => b.seq - a.seq || b.createdAt - a.createdAt)
+    let lastError: unknown = primaryError
+
+    for (let index = 0; index < newestFirst.length; index++) {
+      const checkpoint = newestFirst[index]!
+      try {
+        return {
+          doc: createDocFromUpdate(checkpoint.snapshot),
+          recovery: {
+            source: 'checkpoint',
+            checkpointSeq: checkpoint.seq,
+            checkpointCreatedAt: checkpoint.createdAt,
+            skippedNewerCheckpoints: index,
+          },
+        }
+      }
+      catch (error) {
+        lastError = error
+      }
+    }
+
+    throw new DesignDocLoadError(projectId, originalUpdateBytes, newestFirst.length, lastError)
+  }
+}
 
 function debounce(fn: () => void, ms: number): { call: () => void, flush: () => void, cancel: () => void } {
   let t: ReturnType<typeof setTimeout> | null = null
@@ -48,18 +141,44 @@ function debounce(fn: () => void, ms: number): { call: () => void, flush: () => 
 }
 
 export async function useDesignDoc(projectId: string) {
-  const doc = new Y.Doc()
   const existing = await idbGet<DesignStateRow>(STORES.designState, projectId)
   const existingBytes = existing?.update ?? existing?.snapshot
+  let loadResult: DesignDocLoadResult
+
   if (existingBytes) {
     try {
-      Y.applyUpdate(doc, existingBytes instanceof Uint8Array ? existingBytes : new Uint8Array(existingBytes))
+      loadResult = loadDesignDocFromUpdates(projectId, existingBytes, [])
     }
-    catch {
-      // ignore — start fresh
+    catch (error) {
+      if (!(error instanceof DesignDocLoadError)) throw error
+      const range = IDBKeyRange.bound([projectId, -Infinity], [projectId, Infinity])
+      const checkpoints = await idbBoundedRange<DesignCheckpointRow>(STORES.designUndoCheckpoints, range)
+      loadResult = loadDesignDocFromUpdates(projectId, existingBytes, checkpoints)
     }
   }
-  ensureInitialized(doc)
+  else {
+    const doc = new Y.Doc()
+    ensureInitialized(doc)
+    loadResult = { doc, recovery: null }
+  }
+
+  const { doc, recovery } = loadResult
+
+  if (recovery) {
+    const recoveredUpdate = Y.encodeStateAsUpdate(doc)
+    try {
+      await idbPut<DesignStateRow>(STORES.designState, {
+        projectId,
+        update: recoveredUpdate,
+        snapshot: recoveredUpdate,
+        updatedAt: new Date().toISOString(),
+      })
+    }
+    catch (error) {
+      doc.destroy()
+      throw error
+    }
+  }
 
   const furnitureMap = getFurnitureMap(doc)
   const undoManager = new Y.UndoManager(furnitureMap, {
@@ -94,11 +213,11 @@ export async function useDesignDoc(projectId: string) {
   async function pushCheckpoint() {
     const update = Y.encodeStateAsUpdate(doc)
     const range = IDBKeyRange.bound([projectId, -Infinity], [projectId, Infinity])
-    const existingRows = await idbBoundedRange<UndoCheckpointRow>(STORES.designUndoCheckpoints, range)
+    const existingRows = await idbBoundedRange<DesignCheckpointRow>(STORES.designUndoCheckpoints, range)
     const nextIndex = existingRows.length === 0
       ? 0
       : Math.max(...existingRows.map(r => r.seq)) + 1
-    await idbPut<UndoCheckpointRow>(STORES.designUndoCheckpoints, {
+    await idbPut<DesignCheckpointRow>(STORES.designUndoCheckpoints, {
       projectId,
       seq: nextIndex,
       createdAt: Date.now(),
@@ -172,6 +291,7 @@ export async function useDesignDoc(projectId: string) {
     redo,
     canUndo: computed<boolean>(() => canUndo.value),
     canRedo: computed<boolean>(() => canRedo.value),
+    recovery,
     dispose,
   }
 }

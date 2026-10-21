@@ -6,41 +6,17 @@ const { Pool } = pg
 let pool: pg.Pool | null = null
 let migrationPromise: Promise<void> | null = null
 
-function databaseUrl(): string {
-  const config = useRuntimeConfig()
-  const url = String(process.env.DATABASE_URL || config.databaseUrl || '')
-  if (!url) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: 'DATABASE_URL is not configured.',
-    })
-  }
-  return url
+interface SchemaMigration {
+  version: number
+  name: string
+  sql: string
 }
 
-function sslConfig(url: string): pg.PoolConfig['ssl'] {
-  if (process.env.PGSSLMODE === 'require' || /[?&]sslmode=require\b/i.test(url)) {
-    return { rejectUnauthorized: false }
-  }
-  return undefined
-}
-
-export function getPool(): pg.Pool {
-  if (!pool) {
-    const url = databaseUrl()
-    pool = new Pool({
-      connectionString: url,
-      ssl: sslConfig(url),
-      max: 10,
-      idleTimeoutMillis: 30_000,
-    })
-  }
-  return pool
-}
-
-export async function ensureSchema(): Promise<void> {
-  if (!migrationPromise) {
-    migrationPromise = getPool().query(`
+const SCHEMA_MIGRATIONS: SchemaMigration[] = [
+  {
+    version: 1,
+    name: 'baseline',
+    sql: `
       CREATE TABLE IF NOT EXISTS users (
         id text PRIMARY KEY,
         email text NOT NULL,
@@ -131,8 +107,109 @@ export async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS projects_owner_updated_idx ON projects(owner_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS projects_public_idx ON projects(visibility, published_at DESC) WHERE deleted_at IS NULL;
       CREATE INDEX IF NOT EXISTS projects_demo_idx ON projects(is_demo, visibility, updated_at DESC) WHERE deleted_at IS NULL;
-    `).then(() => undefined)
+    `,
+  },
+  {
+    version: 2,
+    name: 'release_0_1_hardening',
+    sql: `
+      CREATE INDEX IF NOT EXISTS auth_sessions_expires_at_idx ON auth_sessions(expires_at);
+      CREATE INDEX IF NOT EXISTS otp_challenges_expires_at_idx ON otp_challenges(expires_at);
+      CREATE INDEX IF NOT EXISTS email_send_events_created_at_idx ON email_send_events(created_at);
+      CREATE INDEX IF NOT EXISTS ai_generation_events_created_at_idx ON ai_generation_events(created_at);
+
+      CREATE TABLE IF NOT EXISTS project_remix_events (
+        id bigserial PRIMARY KEY,
+        project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        actor_hash text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS project_remix_events_actor_created_idx ON project_remix_events(actor_hash, created_at DESC);
+      CREATE INDEX IF NOT EXISTS project_remix_events_project_actor_created_idx ON project_remix_events(project_id, actor_hash, created_at DESC);
+      CREATE INDEX IF NOT EXISTS project_remix_events_created_at_idx ON project_remix_events(created_at);
+    `,
+  },
+]
+
+const RETENTION_CLEANUP_SQL = `
+  DELETE FROM auth_sessions WHERE expires_at < now();
+  DELETE FROM otp_challenges WHERE expires_at < now() - interval '7 days';
+  DELETE FROM email_send_events WHERE created_at < now() - interval '30 days';
+  DELETE FROM ai_generation_events WHERE created_at < now() - interval '30 days';
+  DELETE FROM project_remix_events WHERE created_at < now() - interval '30 days';
+`
+
+function databaseUrl(): string {
+  const config = useRuntimeConfig()
+  const url = String(process.env.DATABASE_URL || config.databaseUrl || '')
+  if (!url) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'DATABASE_URL is not configured.',
+    })
   }
+  return url
+}
+
+function sslConfig(url: string): pg.PoolConfig['ssl'] {
+  if (process.env.PGSSLMODE === 'require' || /[?&]sslmode=require\b/i.test(url)) {
+    return { rejectUnauthorized: false }
+  }
+  return undefined
+}
+
+export function getPool(): pg.Pool {
+  if (!pool) {
+    const url = databaseUrl()
+    pool = new Pool({
+      connectionString: url,
+      ssl: sslConfig(url),
+      max: 10,
+      idleTimeoutMillis: 30_000,
+    })
+  }
+  return pool
+}
+
+async function migrateSchema(): Promise<void> {
+  const client = await getPool().connect()
+  try {
+    await client.query('BEGIN')
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('morti-schema-migrations'))")
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version integer PRIMARY KEY,
+        name text NOT NULL,
+        applied_at timestamptz NOT NULL DEFAULT now()
+      )
+    `)
+    const appliedResult = await client.query<{ version: number }>('SELECT version FROM schema_migrations')
+    const applied = new Set(appliedResult.rows.map(row => Number(row.version)))
+
+    for (const migration of SCHEMA_MIGRATIONS) {
+      if (applied.has(migration.version)) continue
+      await client.query(migration.sql)
+      await client.query(
+        'INSERT INTO schema_migrations (version, name) VALUES ($1, $2)',
+        [migration.version, migration.name],
+      )
+    }
+    await client.query('COMMIT')
+  }
+  catch (error) {
+    await client.query('ROLLBACK')
+    throw error
+  }
+  finally {
+    client.release()
+  }
+
+  await getPool().query(RETENTION_CLEANUP_SQL)
+}
+
+export async function ensureSchema(): Promise<void> {
+  migrationPromise ??= migrateSchema()
   await migrationPromise
 }
 
