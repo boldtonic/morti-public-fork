@@ -1,6 +1,10 @@
 import { createError, getHeader, getRouterParam, send, setHeader, setResponseStatus } from 'h3'
 import { dbQuery } from '~~/server/utils/db'
 import {
+  PROJECT_SNAPSHOT_CONTENT_DISPOSITION,
+  PROJECT_SNAPSHOT_CONTENT_TYPE,
+} from '~~/server/utils/project-snapshot'
+import {
   PROJECT_METADATA_SELECT,
   ifNoneMatchMatches,
   projectHasSnapshot,
@@ -32,7 +36,9 @@ export default defineEventHandler(async (event) => {
   }
   const etag = projectSnapshotEtag(row)
   if (etag) setHeader(event, 'etag', etag)
-  setHeader(event, 'content-type', row.snapshot_content_type || 'application/octet-stream')
+  setHeader(event, 'content-type', PROJECT_SNAPSHOT_CONTENT_TYPE)
+  setHeader(event, 'content-disposition', PROJECT_SNAPSHOT_CONTENT_DISPOSITION)
+  setHeader(event, 'content-security-policy', "default-src 'none'; sandbox")
   setHeader(event, 'cache-control', 'public, max-age=60, must-revalidate')
 
   if (etag && ifNoneMatchMatches(getHeader(event, 'if-none-match'), etag)) {

@@ -1,6 +1,12 @@
 import { createError, getRouterParam, readMultipartFormData } from 'h3'
 import { requireUser } from '~~/server/utils/auth'
 import { dbQuery } from '~~/server/utils/db'
+import {
+  InvalidProjectSnapshotError,
+  PROJECT_SNAPSHOT_CONTENT_TYPE,
+  PROJECT_SNAPSHOT_MAX_BYTES,
+  validateProjectSnapshotBytes,
+} from '~~/server/utils/project-snapshot'
 import { PROJECT_METADATA_SELECT, projectRecordFromRow, type ProjectRow } from '~~/server/utils/projects'
 
 export default defineEventHandler(async (event) => {
@@ -18,8 +24,18 @@ export default defineEventHandler(async (event) => {
   if (!snapshot?.data || snapshot.data.byteLength === 0) {
     throw createError({ statusCode: 400, statusMessage: 'snapshot is required.' })
   }
-  if (snapshot.data.byteLength > 20 * 1024 * 1024) {
+  if (snapshot.data.byteLength > PROJECT_SNAPSHOT_MAX_BYTES) {
     throw createError({ statusCode: 413, statusMessage: 'Snapshot is too large.' })
+  }
+  let snapshotBytes: Buffer
+  try {
+    snapshotBytes = validateProjectSnapshotBytes(snapshot.data)
+  }
+  catch (error) {
+    if (error instanceof InvalidProjectSnapshotError) {
+      throw createError({ statusCode: 400, statusMessage: error.message })
+    }
+    throw error
   }
 
   const result = await dbQuery<ProjectRow>(
@@ -35,9 +51,9 @@ export default defineEventHandler(async (event) => {
     `,
     [
       id,
-      Buffer.from(snapshot.data),
-      snapshot.filename || `snapshot-${row.client_project_id}.bin`,
-      snapshot.type || 'application/octet-stream',
+      snapshotBytes,
+      `snapshot-${row.client_project_id}.bin`,
+      PROJECT_SNAPSHOT_CONTENT_TYPE,
     ],
   )
   return projectRecordFromRow(result.rows[0])

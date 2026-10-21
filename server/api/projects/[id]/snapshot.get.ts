@@ -2,6 +2,10 @@ import { createError, getHeader, getRouterParam, send, setHeader, setResponseSta
 import { getCurrentUser } from '~~/server/utils/auth'
 import { dbQuery } from '~~/server/utils/db'
 import {
+  PROJECT_SNAPSHOT_CONTENT_DISPOSITION,
+  PROJECT_SNAPSHOT_CONTENT_TYPE,
+} from '~~/server/utils/project-snapshot'
+import {
   PROJECT_METADATA_SELECT,
   assertCanReadProject,
   ifNoneMatchMatches,
@@ -21,7 +25,9 @@ export default defineEventHandler(async (event) => {
 
   const etag = projectSnapshotEtag(row)
   if (etag) setHeader(event, 'etag', etag)
-  setHeader(event, 'content-type', row.snapshot_content_type || 'application/octet-stream')
+  setHeader(event, 'content-type', PROJECT_SNAPSHOT_CONTENT_TYPE)
+  setHeader(event, 'content-disposition', PROJECT_SNAPSHOT_CONTENT_DISPOSITION)
+  setHeader(event, 'content-security-policy', "default-src 'none'; sandbox")
   // `no-cache` (not `no-store`) so the browser keeps a copy and revalidates
   // via If-None-Match — server returns 304 and the body is reused from cache.
   setHeader(event, 'cache-control', row.visibility === 'public' ? 'public, max-age=60, must-revalidate' : 'private, no-cache')
