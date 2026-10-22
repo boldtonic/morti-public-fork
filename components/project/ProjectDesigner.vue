@@ -6,7 +6,7 @@ import { DEFAULT_COLUMN_WIDTH, DEFAULT_DRAWER_COUNT, DRAWER_COUNT_MAX, DRAWER_CO
 import { moduleHandleHorizontalPosition, moduleHandleMode } from '~~/shared/domain/handles'
 import { clampInteriorShelfCountForHeight, INTERIOR_SHELF_COUNT_MAX, INTERIOR_SHELF_COUNT_MIN, maxInteriorShelfCountForHeight, normalizeInteriorShelfCount } from '~~/shared/domain/interior-shelves'
 import type { FurnitureConfig, FurnitureModule, HandleHorizontalPosition, HandleMode, HandleOrientation, HandlePosition, ModuleType, PublicStyle } from '~~/shared/domain/types'
-import { validateFurnitureDocIssues } from '~~/shared/domain/assembly-validation'
+import { validateFurnitureDocIssues } from '~~/shared/domain/assembly'
 import { furnitureConfigText, moduleTypeText, uiText as t } from '~~/shared/i18n/ui-copy'
 import {
   insertColumn,

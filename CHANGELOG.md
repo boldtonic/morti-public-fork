@@ -8,11 +8,19 @@ All notable product changes will be recorded here. Tenon/Morti follows semantic 
 
 - Added `.morti` ProjectBundle v2 with explicit metric units, project name, and normalized product style while retaining v1 and legacy raw Yjs import compatibility.
 - Added deterministic `ManufacturingPackageV1` JSON with individual panel identities, millimetre dimensions, complete preliminary operations, material/edge/hardware placeholders, traceability, structured issues, and explicit manufacturability status.
+- Added six deterministic manufacturing golden projects covering open carcasses, interior shelves, drawers, single and double doors, and stepped mixed compositions.
 
 ### Changed
 
 - Project import, export, duplicate, public remix, and cloud restore now preserve the product's materials, handle style, and render appearance together with its parametric geometry.
 - Separated Three.js/CSG panel geometry from the pure assembly compiler so manufacturing-domain code does not depend on the renderer.
+- Cutlist tables and technical panel cards now project the same manufacturing package, with exact operation coordinates, depth, rotation, face, and production status preserved.
+
+### Fixed
+
+- Prevented distinct machining operations from being merged when their coordinates, depth, rotation, face, or target fabrication identity differ.
+- Blocked manufacturing packages when a compiled operation is lost, duplicated, or detached from its target part.
+- Removed duplicate assembly-validation logic so Design, manufacturing packages, and Cutlist share the compiler's validation rules.
 
 ### Security
 

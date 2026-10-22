@@ -141,7 +141,7 @@ Near-term order:
 1. Preserve the post-0.1 trust boundary: inert validated snapshots and owner-scoped local projects. Completed 2026-10-21.
 2. Define and migrate to `ProjectBundleV2` so geometry, style, hardware state, import/export, duplicate, publish, remix, and cloud round-trip as one product. Completed 2026-10-22.
 3. Define deterministic `ManufacturingPackageV1` before adding CSV, XLSX, DXF, or CNC-specific adapters. Completed as a preliminary contract on 2026-10-22.
-4. Add compiler/cutlist golden projects and a single visible validation pipeline.
+4. Add compiler/cutlist golden projects and a single visible validation pipeline. Completed for the preliminary manufacturing contract on 2026-10-22.
 5. Select a real manufacturer, construction system, material specification, and exact hardware families before generating joinery or hinge/runner machining.
 6. Resume product realism with simple feet after the project/manufacturing contracts are stable; wheels remain a later optional product choice.
 
@@ -167,7 +167,11 @@ Product reasoning:
 - `ManufacturingPackageV1` now provides canonical, byte-stable JSON in millimetres. It preserves every compiled panel and operation, separates snapshot-local instance identity from fabrication-equivalent part identity, declares face-local coordinates, and carries material, face, edge, hardware, traceability, issue, and manufacturability data.
 - The contract deliberately does not invent workshop facts: actual board thickness is null; manufacturing grain and all edge treatments are unspecified; handle selections are visual-only with no SKU or drilling pattern; current operations are unvalidated. Missing operation coordinates or faces block the package.
 - Pure assembly compilation no longer imports Three.js or CSG; visual panel geometry is isolated under `shared/three/assembly-geometry.ts`.
-- Next implementation block: golden compiler/manufacturing projects and a single visible validation pipeline. Corte remains preliminary until those checks and a real manufacturer validation are in place.
+- Corte now consumes `ManufacturingPackageV1` through one pure presentation projection instead of recompiling its own grouping rules. Panel families use fabrication identity; operation families include target part, face, signed local X/Y, every dimension, depth, rotation, through state, purpose, and validation state.
+- Corte displays the package as `Preliminar` or `Bloqueado`, together with global error and warning counts. Exact local coordinates, face, depth, and rotation are visible in the machining table; errors remain editing blockers for future industrial export rather than preventing project work.
+- Design now imports the assembly compiler validation directly, removing the second copy of the same rules.
+- Six deterministic golden projects pin canonical package bytes and production summaries for an open carcass, interior shelves, two drawers, a single door, double doors, and a stepped mixed composition. Focused regressions prove that distinct exact machining layouts cannot be grouped together and that every compiler operation is conserved exactly once in its target part.
+- Corte remains preliminary until a real manufacturer approves material SKUs and actual thicknesses, edge treatments, construction/joinery, tolerances, hinge and runner families, and their drilling patterns.
 
 ## Collaboration Notes
 

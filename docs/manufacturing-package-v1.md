@@ -9,6 +9,7 @@ Fecha: 22 de octubre de 2026
 - El paquete es inmutable, versionado y serializable como JSON canónico.
 - La misma entrada produce exactamente los mismos bytes y los arrays se ordenan con comparación ordinal, independiente del idioma del sistema.
 - Cada panel compilado se conserva como una instancia individual; no se agrupan ni eliminan piezas equivalentes.
+- Cada operación compilada debe conservarse exactamente una vez en la pieza objetivo. Una operación perdida, duplicada o huérfana bloquea el paquete.
 - Las dimensiones y operaciones salen en milímetros.
 - Cada operación conserva tipo, pieza objetivo, cara, centro, profundidad, rotación y dimensiones disponibles.
 - Los errores de ensamblaje y las carencias industriales se transportan como incidencias estructuradas.
@@ -55,13 +56,13 @@ El paquete separa explícitamente apariencia y fabricación:
 
 `preliminary` significa que la geometría compiló pero todavía existen decisiones de taller pendientes. No autoriza fabricación.
 
-`blocked` significa que el paquete no debe llegar a un exportador productivo. Actualmente se bloquea, como mínimo, cuando no hay piezas, el compilador informa un error, una operación carece de centro o cara válidos, sus dimensiones/profundidad no son coherentes con el tipo, o el mecanizado sale de la cara del panel.
+`blocked` significa que el paquete no debe llegar a un exportador productivo. Actualmente se bloquea, como mínimo, cuando no hay piezas, el compilador informa un error, una operación compilada no se conserva exactamente una vez, una operación carece de centro o cara válidos, sus dimensiones/profundidad no son coherentes con el tipo, o el mecanizado sale de la cara del panel.
 
 Los avisos actuales dejan visibles las carencias de material industrial, veta, cantos, uniones, tiradores, bisagras y correderas. Un exportador futuro deberá rechazar paquetes `blocked` y declarar expresamente si admite paquetes `preliminary` solo para revisión.
 
 ## Próxima validación
 
-1. Crear seis proyectos golden que cubran mueble abierto, baldas interiores, cajones, puertas simples/dobles, geometría escalonada y combinaciones límite.
-2. Comparar paneles, operaciones, incidencias y bytes JSON en Node, navegador y CI.
+1. Los seis proyectos golden ya cubren mueble abierto, baldas interiores, cajones, puertas simples/dobles y geometría escalonada mixta. Fijan bytes JSON, piezas, operaciones, herrajes e incidencias en la suite de Node/CI.
+2. Pendiente: ejecutar las mismas fixtures en navegador y contrastar sus bytes con Node/CI para cerrar la portabilidad entre runtimes.
 3. Definir con un fabricante real material/SKU, canteado, sistema constructivo, tiradores, bisagras, correderas, tolerancias y convención CNC.
 4. Fabricar y medir una probeta y un módulo piloto antes de habilitar exportación productiva.

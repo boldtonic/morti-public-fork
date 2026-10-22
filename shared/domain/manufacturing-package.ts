@@ -424,6 +424,49 @@ function packageIssue(
   return { id: issueId(issue), ...issue }
 }
 
+function operationReference(id: string, targetInstanceId: string): string {
+  return `${targetInstanceId}\u0000${id}`
+}
+
+export function manufacturingOperationConservationIssues(
+  compiledOperations: PanelOperation[],
+  parts: ManufacturingPartV1[],
+): ManufacturingIssueV1[] {
+  const compiledCounts = new Map<string, number>()
+  const packagedCounts = new Map<string, number>()
+  const compiledByReference = new Map<string, PanelOperation>()
+
+  for (const operation of compiledOperations) {
+    const reference = operationReference(operation.id, operation.targetPanelKey)
+    compiledCounts.set(reference, (compiledCounts.get(reference) ?? 0) + 1)
+    compiledByReference.set(reference, operation)
+  }
+  for (const part of parts) {
+    for (const operation of part.operations) {
+      const reference = operationReference(operation.id, operation.targetInstanceId)
+      packagedCounts.set(reference, (packagedCounts.get(reference) ?? 0) + 1)
+    }
+  }
+
+  const references = [...new Set([...compiledCounts.keys(), ...packagedCounts.keys()])].sort(compareOrdinal)
+  return references.flatMap((reference) => {
+    const compiledCount = compiledCounts.get(reference) ?? 0
+    const packagedCount = packagedCounts.get(reference) ?? 0
+    if (compiledCount === packagedCount) return []
+    const compiledOperation = compiledByReference.get(reference)
+    const separatorIndex = reference.indexOf('\u0000')
+    const targetInstanceId = reference.slice(0, separatorIndex)
+    const operationId = reference.slice(separatorIndex + 1)
+    return [packageIssue(
+      'operation-conservation-failed',
+      `Operation ${operationId} targeting ${targetInstanceId} appears ${compiledCount} time(s) in the compiler output and ${packagedCount} time(s) in the manufacturing package.`,
+      'error',
+      compiledOperation?.sourceModuleId ?? null,
+      targetInstanceId,
+    )]
+  })
+}
+
 function compiledIssue(issue: CompiledAssemblyIssue): ManufacturingIssueV1 {
   return packageIssue(
     issue.code,
@@ -499,10 +542,12 @@ function validateOperation(operation: ManufacturingOperationV1, part: Manufactur
 function buildIssues(
   furniture: FurnitureDoc,
   parts: ManufacturingPartV1[],
+  compiledOperations: PanelOperation[],
   assemblyIssues: CompiledAssemblyIssue[],
   hardware: ManufacturingHardwareV1[],
 ): ManufacturingIssueV1[] {
   const issues = assemblyIssues.map(compiledIssue)
+  issues.push(...manufacturingOperationConservationIssues(compiledOperations, parts))
   if (parts.length === 0) {
     issues.push(packageIssue('no-manufacturable-parts', 'The project does not contain any compiled panels.', 'error'))
   }
@@ -547,7 +592,7 @@ export function createManufacturingPackage(options: CreateManufacturingPackageOp
     .map(panel => manufacturingPart(panel, byPart[partForRole(panel.role)]))
     .sort((a, b) => compareOrdinal(a.instanceId, b.instanceId))
   const hardware = buildHardware(options.furniture, style)
-  const issues = buildIssues(options.furniture, parts, assembly.issues, hardware)
+  const issues = buildIssues(options.furniture, parts, assembly.operations, assembly.issues, hardware)
   const sourcePayload = { furniture: options.furniture, publicStyle: style }
   const packageValue: ManufacturingPackageV1 = {
     packageVersion: MANUFACTURING_PACKAGE_VERSION,

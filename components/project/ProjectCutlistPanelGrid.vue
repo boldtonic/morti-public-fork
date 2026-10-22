@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import type * as Y from 'yjs'
 import { compileAssembly } from '~~/shared/domain/assembly'
-import {
-  panelCutlistOrientation,
-  panelCutlistSignature,
-  panelGroupIds,
-} from '~~/shared/domain/cutlist'
-import type { CompiledPanel, FurnitureDoc, PanelOperation } from '~~/shared/domain/types'
+import { buildManufacturingCutlist } from '~~/shared/domain/manufacturing-cutlist'
+import { createManufacturingPackage } from '~~/shared/domain/manufacturing-package'
+import type { CompiledPanel, FurnitureDoc, PanelOperation, PublicStyle } from '~~/shared/domain/types'
 import { panelRoleText, uiText as t } from '~~/shared/i18n/ui-copy'
 import { readFurnitureDoc } from '~~/shared/yjs/doc'
 
@@ -16,12 +13,14 @@ const PanelCanvas = defineAsyncComponent(() => import('~~/components/three/Panel
 interface Props {
   ydoc?: Y.Doc | null
   doc?: Y.Doc | null
+  publicStyle?: PublicStyle | null
   selectedDrawingKey?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   ydoc: null,
   doc: null,
+  publicStyle: null,
   selectedDrawingKey: null,
 })
 
@@ -57,6 +56,10 @@ if (getCurrentScope()) {
 }
 
 const compiled = computed(() => snapshot.value ? compileAssembly(snapshot.value) : { panels: [], operations: [], issues: [] })
+const manufacturingPackage = computed(() => snapshot.value
+  ? createManufacturingPackage({ furniture: snapshot.value, publicStyle: props.publicStyle })
+  : null)
+const cutlist = computed(() => manufacturingPackage.value ? buildManufacturingCutlist(manufacturingPackage.value) : null)
 
 interface PanelGroup {
   key: string
@@ -70,39 +73,29 @@ interface PanelGroup {
 }
 
 const panelGroups = computed<PanelGroup[]>(() => {
-  const grouped = new Map<string, Omit<PanelGroup, 'groupId'>>()
-  const { panels, operations } = compiled.value
-
-  for (const panel of panels) {
-    const key = panelCutlistSignature(panel, operations)
-    const existing = grouped.get(key)
-    if (existing) {
-      existing.quantity += 1
-      continue
-    }
-
-    grouped.set(key, {
-      key,
-      representative: panel,
-      operations: operations.filter(op => op.targetPanelKey === panel.key),
-      quantity: 1,
-      width: Math.max(0, panel.width),
-      height: Math.max(0, panel.height),
-      thickness: Math.max(0, panel.thickness),
-    })
+  if (!cutlist.value) return []
+  const panelsByInstanceId = new Map(compiled.value.panels.map(panel => [panel.key, panel]))
+  const operationsByInstanceId = new Map<string, PanelOperation[]>()
+  for (const operation of compiled.value.operations) {
+    const operations = operationsByInstanceId.get(operation.targetPanelKey) ?? []
+    operations.push(operation)
+    operationsByInstanceId.set(operation.targetPanelKey, operations)
   }
 
-  const rows = [...grouped.values()].sort((a, b) =>
-    a.representative.role !== b.representative.role
-      ? a.representative.role.localeCompare(b.representative.role)
-      : a.width !== b.width
-        ? b.width - a.width
-        : a.height !== b.height
-          ? b.height - a.height
-          : b.thickness - a.thickness,
-  )
-  const ids = panelGroupIds(rows)
-  return rows.map((row, index) => ({ ...row, groupId: ids[index] }))
+  return cutlist.value.panelGroups.flatMap((group) => {
+    const representative = panelsByInstanceId.get(group.representativeInstanceId)
+    if (!representative) return []
+    return [{
+      key: group.key,
+      groupId: group.groupId,
+      representative,
+      operations: operationsByInstanceId.get(group.representativeInstanceId) ?? [],
+      quantity: group.quantity,
+      width: group.widthMm / 1000,
+      height: group.heightMm / 1000,
+      thickness: group.nominalThicknessMm / 1000,
+    }]
+  })
 })
 
 function isSelectedGroup(group: PanelGroup) {

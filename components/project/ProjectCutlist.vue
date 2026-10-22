@@ -1,21 +1,19 @@
 <script setup lang="ts">
 import type * as Y from 'yjs'
-import { compileAssembly } from '~~/shared/domain/assembly'
-import {
-  panelCutlistOrientation,
-  panelCutlistSignature,
-  panelGroupIds,
-} from '~~/shared/domain/cutlist'
-import type { CompiledPanel, PanelOperation, PanelRole } from '~~/shared/domain/types'
+import { buildManufacturingCutlist } from '~~/shared/domain/manufacturing-cutlist'
+import { createManufacturingPackage } from '~~/shared/domain/manufacturing-package'
+import type { PanelRole, PublicStyle } from '~~/shared/domain/types'
 import { faceText, operationText, orientationText, panelRoleText, uiText as t } from '~~/shared/i18n/ui-copy'
 import { readFurnitureDoc } from '~~/shared/yjs/doc'
 
 interface Props {
   ydoc: Y.Doc
+  publicStyle?: PublicStyle | null
   selectedDrawingKey?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  publicStyle: null,
   selectedDrawingKey: null,
 })
 
@@ -49,126 +47,18 @@ if (getCurrentScope()) {
   })
 }
 
-interface PanelRow {
-  key: string
-  groupId: string
-  role: PanelRole
-  orientation: string
-  width: number
-  height: number
-  thickness: number
-  quantity: number
-}
+const manufacturingPackage = computed(() => createManufacturingPackage({
+  furniture: snapshot.value,
+  publicStyle: props.publicStyle,
+}))
+const cutlist = computed(() => buildManufacturingCutlist(manufacturingPackage.value))
+const panelRows = computed(() => cutlist.value.panelGroups)
+const operationRows = computed(() => cutlist.value.operationGroups)
+const errorCount = computed(() => cutlist.value.issues.filter(issue => issue.severity === 'error').length)
+const warningCount = computed(() => cutlist.value.issues.filter(issue => issue.severity === 'warning').length)
+const groupIdByPartId = computed(() => new Map(panelRows.value.map(row => [row.partId, row.groupId])))
 
-interface OperationRow {
-  key: string
-  operationType: string
-  targetRole: string
-  face: string
-  diameter: number | null
-  depth: number | null
-  width: number | null
-  length: number | null
-  through: boolean
-  quantity: number
-}
-
-const compiled = computed(() => compileAssembly(snapshot.value))
-
-const panelRows = computed<PanelRow[]>(() => {
-  const { panels, operations } = compiled.value
-  const grouped = new Map<string, { representative: CompiledPanel, quantity: number }>()
-  for (const panel of panels) {
-    const signature = panelCutlistSignature(panel, operations)
-    const existing = grouped.get(signature)
-    if (existing) {
-      existing.quantity += 1
-    }
-    else {
-      grouped.set(signature, { representative: panel, quantity: 1 })
-    }
-  }
-
-  const rows = [...grouped.entries()]
-    .map(([key, entry]) => {
-      const panel = entry.representative
-      return {
-        key,
-        role: panel.role,
-        orientation: panelCutlistOrientation(panel),
-        width: Math.max(0, panel.width),
-        height: Math.max(0, panel.height),
-        thickness: Math.max(0, panel.thickness),
-        quantity: entry.quantity,
-      }
-    })
-    .sort((a, b) =>
-      a.role !== b.role
-        ? a.role.localeCompare(b.role)
-        : a.orientation !== b.orientation
-          ? a.orientation.localeCompare(b.orientation)
-          : a.width !== b.width
-            ? b.width - a.width
-            : a.height !== b.height
-              ? b.height - a.height
-              : b.thickness - a.thickness,
-    )
-
-  const ids = panelGroupIds(rows)
-  return rows.map((row, index) => ({ ...row, groupId: ids[index] }))
-})
-
-const operationRows = computed<OperationRow[]>(() => {
-  const roleByPanel = new Map(compiled.value.panels.map(panel => [panel.key, panel.role]))
-  const grouped = new Map<string, OperationRow>()
-
-  for (const op of compiled.value.operations) {
-    const targetRole = roleByPanel.get(op.targetPanelKey) ?? '—'
-    const diameter = op.diameter ?? null
-    const depth = op.depth ?? null
-    const width = op.width ?? null
-    const length = op.length ?? op.height ?? null
-    const face = op.face ?? 'front'
-    const through = op.operationType === 'through-hole'
-    const key = [
-      op.operationType,
-      targetRole,
-      face,
-      diameter == null ? '—' : diameter.toFixed(6),
-      width == null ? '—' : width.toFixed(6),
-      length == null ? '—' : length.toFixed(6),
-      through ? '1' : '0',
-    ].join('|')
-    const existing = grouped.get(key)
-    if (existing) {
-      existing.quantity += 1
-    }
-    else {
-      grouped.set(key, {
-        key,
-        operationType: op.operationType,
-        targetRole,
-        face,
-        diameter,
-        depth,
-        width,
-        length,
-        through,
-        quantity: 1,
-      })
-    }
-  }
-
-  return [...grouped.values()].sort((a, b) =>
-    a.operationType !== b.operationType
-      ? a.operationType.localeCompare(b.operationType)
-      : a.targetRole !== b.targetRole
-        ? a.targetRole.localeCompare(b.targetRole)
-        : (b.diameter ?? 0) - (a.diameter ?? 0),
-  )
-})
-
-function isSelectedRow(row: PanelRow) {
+function isSelectedRow(row: (typeof panelRows.value)[number]) {
   return props.selectedDrawingKey === row.key || props.selectedDrawingKey === row.groupId
 }
 
@@ -179,16 +69,50 @@ watch([panelRows, () => props.selectedDrawingKey], ([rows]) => {
   }
 })
 
-function formatCentimeters(value: number | null): string {
+function formatMillimetresAsCentimetres(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return '—'
-  return (Math.round(value * 1000) / 10).toFixed(1).replace(/\.0$/, '')
+  return (Math.round(value) / 10).toFixed(1).replace(/\.0$/, '')
 }
 
-function formatPanelRole(role: string): string {
-  return role === '—' ? role : panelRoleText(role as PanelRole)
+function formatDegrees(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return (Math.round(value * 10) / 10).toFixed(1).replace(/\.0$/, '')
 }
 
-function selectPanel(row: PanelRow) {
+function formatMillimetres(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const rounded = Math.round(value * 1000) / 1000
+  return Object.is(rounded, -0) ? '0' : String(rounded)
+}
+
+function formatOrientation(orientation: string | null): string {
+  if (orientation === 'horizontal-xz') return orientationText('horizontal')
+  if (orientation === 'vertical-yz') return orientationText('vertical')
+  return orientationText('front')
+}
+
+function operationTargetLabel(partId: string, role: PanelRole): string {
+  const groupId = groupIdByPartId.value.get(partId)
+  return groupId ? `${groupId} · ${panelRoleText(role)}` : panelRoleText(role)
+}
+
+function formatThrough(value: boolean | null): string {
+  if (value == null) return '—'
+  return value ? t('yes') : t('no')
+}
+
+function operationPurposeLabel(purpose: (typeof operationRows.value)[number]['purpose']): string {
+  if (purpose === 'handle-mounting') return t('purposeHandleMounting')
+  if (purpose === 'back-panel-groove') return t('purposeBackPanelGroove')
+  if (purpose === 'drawer-bottom-groove') return t('purposeDrawerBottomGroove')
+  return t('purposeUnspecified')
+}
+
+function productionStatusLabel(status: (typeof operationRows.value)[number]['productionStatus']): string {
+  return status === 'unvalidated' ? t('productionUnvalidated') : status
+}
+
+function selectPanel(row: (typeof panelRows.value)[number]) {
   emit('update:selectedDrawingKey', isSelectedRow(row) ? null : row.key)
 }
 
@@ -204,6 +128,27 @@ function stop() {}
     class="min-h-0 overflow-auto space-y-6 pt-32 md:pt-20"
     @click="clearSelection"
   >
+    <section
+      class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-y border-default py-2 text-xs"
+      @click.stop="stop"
+    >
+      <div>
+        <div class="font-semibold text-highlighted">
+          {{ t('manufacturingStatus') }} ·
+          <span :class="cutlist.status === 'blocked' ? 'text-error' : 'text-warning'">
+            {{ cutlist.status === 'blocked' ? t('manufacturingBlocked') : t('manufacturingPreliminary') }}
+          </span>
+        </div>
+        <p class="mt-0.5 max-w-2xl text-pretty text-muted">
+          {{ cutlist.status === 'blocked' ? t('manufacturingBlockedHelp') : t('manufacturingPreliminaryHelp') }}
+        </p>
+      </div>
+      <div class="flex shrink-0 gap-3 tabular-nums text-muted">
+        <span>{{ t('errors') }} <strong class="text-highlighted">{{ errorCount }}</strong></span>
+        <span>{{ t('warnings') }} <strong class="text-highlighted">{{ warningCount }}</strong></span>
+      </div>
+    </section>
+
     <section @click.stop="stop">
       <h2 class="mb-2 text-balance text-sm font-semibold text-highlighted">
         {{ t('panelCutlist') }}
@@ -246,16 +191,16 @@ function stop() {}
               {{ panelRoleText(row.role) }}
             </td>
             <td :class="['border px-2 py-1.5', isSelectedRow(row) ? 'border-primary/30 text-default' : 'border-default text-muted']">
-              {{ orientationText(row.orientation) }}
+              {{ formatOrientation(row.orientation) }}
             </td>
             <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
-              {{ formatCentimeters(row.width) }}
+              {{ formatMillimetresAsCentimetres(row.widthMm) }}
             </td>
             <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
-              {{ formatCentimeters(row.height) }}
+              {{ formatMillimetresAsCentimetres(row.heightMm) }}
             </td>
             <td :class="['border px-2 py-1.5 tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
-              {{ formatCentimeters(row.thickness) }}
+              {{ formatMillimetresAsCentimetres(row.nominalThicknessMm) }}
             </td>
             <td :class="['border px-2 py-1.5 font-semibold tabular-nums', isSelectedRow(row) ? 'border-primary/30 text-highlighted' : 'border-default text-highlighted']">
               {{ row.quantity }}
@@ -278,17 +223,29 @@ function stop() {}
       <h2 class="mb-2 text-balance text-sm font-semibold text-highlighted">
         {{ t('machiningOperations') }}
       </h2>
+      <p
+        v-if="cutlist.coordinateSystem.operationCoordinates === 'face-local-centered-xy'"
+        class="mb-2 max-w-3xl text-pretty text-[11px] leading-relaxed text-muted"
+      >
+        {{ t('operationCoordinateReference') }}
+      </p>
       <div class="-mx-1 max-w-full overflow-x-auto px-1">
-      <table class="w-full min-w-[40rem] border-collapse text-xs">
+      <table class="w-full min-w-[78rem] border-collapse text-xs">
         <thead>
           <tr class="bg-muted/60 text-left text-muted">
             <th class="border border-default px-2 py-1.5 font-medium"> {{ t('operation') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('operationPurpose') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('productionState') }}</th>
             <th class="border border-default px-2 py-1.5 font-medium"> {{ t('targetPanel') }} </th>
             <th class="border border-default px-2 py-1.5 font-medium">{{ t('face') }}</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('diameterCm') }} </th>
-            <th class="border border-default px-2 py-1.5 font-medium">{{ t('depthCm') }}</th>
-            <th class="border border-default px-2 py-1.5 font-medium">{{ t('widthCm') }}</th>
-            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('lengthCm') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('xMm') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('yMm') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('diameterMm') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('depthMm') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('widthMm') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('heightMm') }}</th>
+            <th class="border border-default px-2 py-1.5 font-medium"> {{ t('lengthMm') }} </th>
+            <th class="border border-default px-2 py-1.5 font-medium">{{ t('rotationDeg') }}</th>
             <th class="border border-default px-2 py-1.5 font-medium"> {{ t('through') }} </th>
             <th class="border border-default px-2 py-1.5 font-medium">{{ t('quantity') }}</th>
           </tr>
@@ -300,18 +257,24 @@ function stop() {}
             class="odd:bg-default even:bg-muted/20"
           >
             <td class="border border-default px-2 py-1.5 text-highlighted">{{ operationText(row.operationType) }}</td>
-            <td class="border border-default px-2 py-1.5 text-highlighted">{{ formatPanelRole(row.targetRole) }}</td>
-            <td class="border border-default px-2 py-1.5 text-muted">{{ faceText(row.face) }}</td>
-            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatCentimeters(row.diameter) }}</td>
-            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatCentimeters(row.depth) }}</td>
-            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatCentimeters(row.width) }}</td>
-            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatCentimeters(row.length) }}</td>
-            <td class="border border-default px-2 py-1.5 text-muted">{{ row.through ? t('yes') : t('no') }}</td>
+            <td class="border border-default px-2 py-1.5 text-muted">{{ operationPurposeLabel(row.purpose) }}</td>
+            <td class="border border-default px-2 py-1.5 text-muted">{{ productionStatusLabel(row.productionStatus) }}</td>
+            <td class="border border-default px-2 py-1.5 text-highlighted">{{ operationTargetLabel(row.targetPartId, row.targetRole) }}</td>
+            <td class="border border-default px-2 py-1.5 text-muted">{{ row.face ? faceText(row.face) : '—' }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMillimetres(row.centerMm?.x ?? null) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMillimetres(row.centerMm?.y ?? null) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMillimetres(row.diameterMm) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMillimetres(row.depthMm) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMillimetres(row.widthMm) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMillimetres(row.heightMm) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatMillimetres(row.lengthMm) }}</td>
+            <td class="border border-default px-2 py-1.5 tabular-nums text-highlighted">{{ formatDegrees(row.rotationDeg) }}</td>
+            <td class="border border-default px-2 py-1.5 text-muted">{{ formatThrough(row.through) }}</td>
             <td class="border border-default px-2 py-1.5 font-semibold tabular-nums text-highlighted">{{ row.quantity }}</td>
           </tr>
           <tr v-if="operationRows.length === 0">
             <td
-              colspan="9"
+              colspan="15"
               class="border border-default px-2 py-4 text-center text-muted"
             >
               {{ t('noMachiningOperations') }}

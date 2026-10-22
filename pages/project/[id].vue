@@ -782,6 +782,7 @@ const canvasChromeTeleportSelector = computed(() =>
             v-else-if="!userNeedsEmailVerification && viewMode === 'cutlist' && docRef"
             v-model:selected-drawing-key="cutlistSelectedDrawingKey"
             :ydoc="(docRef as any)"
+            :public-style="publicStyle"
             class="min-h-0 flex-1 px-3 pb-3 sm:px-5 sm:pb-5"
           />
           <div
@@ -882,6 +883,7 @@ const canvasChromeTeleportSelector = computed(() =>
                   v-else-if="docRef && viewMode === 'cutlist'"
                   v-model:selected-drawing-key="cutlistSelectedDrawingKey"
                   :ydoc="(docRef as any)"
+                  :public-style="publicStyle"
                   class="h-full min-h-0 w-full"
                 />
                 <ProductPill
