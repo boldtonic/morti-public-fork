@@ -395,7 +395,7 @@ Esta fase es pequena en superficie, pero debe ir antes de nuevas capacidades pub
 
 Esta fase convierte el comportamiento actual en algo medible y evita que las siguientes decisiones industriales queden enterradas en componentes UI.
 
-**Estado 2026-10-22:** completada para el contrato preliminar. `ProjectBundleV2` y `ManufacturingPackageV1` son versionados y deterministas; Corte consume una única proyección industrial que conserva coordenadas y parámetros completos; Diseño reutiliza la validación del compilador; seis proyectos dorados fijan paquetes, piezas, operaciones, herrajes e incidencias. La validación de fabricante sigue siendo el gate pendiente, no una propiedad que el software pueda asumir.
+**Estado 2026-10-22:** cerrado el núcleo de software del contrato preliminar, no la aceptación industrial completa. `ProjectBundleV2` y `ManufacturingPackageV1` son versionados y deterministas; Corte y sus dibujos consumen una única proyección industrial; Diseño reutiliza la validación del compilador; seis proyectos dorados fijan paquetes, piezas, operaciones, herrajes e incidencias. Una prueba independiente recorre el inventario crudo y compara todos los campos de cada operación, y las mutaciones semánticas bloquean el paquete. Siguen pendientes la comparación de bytes entre navegador y Node/CI, una navegación completa desde toda incidencia hasta su módulo editable, vistas ortográficas frontal/trasera explícitas, una presentación responsive del inspector de operaciones y, sobre todo, la validación del fabricante y la evidencia física.
 
 ### Fase 2 - Producto industrial minimo
 

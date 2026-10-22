@@ -432,34 +432,38 @@ export function manufacturingOperationConservationIssues(
   compiledOperations: PanelOperation[],
   parts: ManufacturingPartV1[],
 ): ManufacturingIssueV1[] {
-  const compiledCounts = new Map<string, number>()
-  const packagedCounts = new Map<string, number>()
+  const compiledSnapshots = new Map<string, string[]>()
+  const packagedSnapshots = new Map<string, string[]>()
   const compiledByReference = new Map<string, PanelOperation>()
 
   for (const operation of compiledOperations) {
     const reference = operationReference(operation.id, operation.targetPanelKey)
-    compiledCounts.set(reference, (compiledCounts.get(reference) ?? 0) + 1)
+    const snapshots = compiledSnapshots.get(reference) ?? []
+    snapshots.push(canonicalJsonStringify(manufacturingOperation(operation)))
+    compiledSnapshots.set(reference, snapshots)
     compiledByReference.set(reference, operation)
   }
   for (const part of parts) {
     for (const operation of part.operations) {
       const reference = operationReference(operation.id, operation.targetInstanceId)
-      packagedCounts.set(reference, (packagedCounts.get(reference) ?? 0) + 1)
+      const snapshots = packagedSnapshots.get(reference) ?? []
+      snapshots.push(canonicalJsonStringify(operation))
+      packagedSnapshots.set(reference, snapshots)
     }
   }
 
-  const references = [...new Set([...compiledCounts.keys(), ...packagedCounts.keys()])].sort(compareOrdinal)
+  const references = [...new Set([...compiledSnapshots.keys(), ...packagedSnapshots.keys()])].sort(compareOrdinal)
   return references.flatMap((reference) => {
-    const compiledCount = compiledCounts.get(reference) ?? 0
-    const packagedCount = packagedCounts.get(reference) ?? 0
-    if (compiledCount === packagedCount) return []
+    const expected = [...(compiledSnapshots.get(reference) ?? [])].sort(compareOrdinal)
+    const actual = [...(packagedSnapshots.get(reference) ?? [])].sort(compareOrdinal)
+    if (canonicalJsonStringify(expected) === canonicalJsonStringify(actual)) return []
     const compiledOperation = compiledByReference.get(reference)
     const separatorIndex = reference.indexOf('\u0000')
     const targetInstanceId = reference.slice(0, separatorIndex)
     const operationId = reference.slice(separatorIndex + 1)
     return [packageIssue(
       'operation-conservation-failed',
-      `Operation ${operationId} targeting ${targetInstanceId} appears ${compiledCount} time(s) in the compiler output and ${packagedCount} time(s) in the manufacturing package.`,
+      `Operation ${operationId} targeting ${targetInstanceId} differs between the compiler output and manufacturing package (expected ${expected.length}, received ${actual.length}).`,
       'error',
       compiledOperation?.sourceModuleId ?? null,
       targetInstanceId,

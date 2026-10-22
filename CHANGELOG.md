@@ -15,12 +15,15 @@ All notable product changes will be recorded here. Tenon/Morti follows semantic 
 - Project import, export, duplicate, public remix, and cloud restore now preserve the product's materials, handle style, and render appearance together with its parametric geometry.
 - Separated Three.js/CSG panel geometry from the pure assembly compiler so manufacturing-domain code does not depend on the renderer.
 - Cutlist tables and technical panel cards now project the same manufacturing package, with exact operation coordinates, depth, rotation, face, and production status preserved.
+- Cutlist now exposes localized manufacturing issues, uses millimetres consistently, distinguishes nominal from unvalidated actual thickness, and labels current materials as visual-only.
 
 ### Fixed
 
 - Prevented distinct machining operations from being merged when their coordinates, depth, rotation, face, or target fabrication identity differ.
 - Blocked manufacturing packages when a compiled operation is lost, duplicated, or detached from its target part.
+- Blocked manufacturing packages when any preserved operation field differs from the compiler output, even when its identifier and target still match.
 - Removed duplicate assembly-validation logic so Design, manufacturing packages, and Cutlist share the compiler's validation rules.
+- Kept panel traceability through grouped cutlist rows and made panel selection and return-to-inventory controls explicit.
 
 ### Security
 

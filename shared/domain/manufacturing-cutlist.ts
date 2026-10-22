@@ -18,6 +18,7 @@ export interface ManufacturingPanelGroupV1 {
   nominalThicknessMm: number
   actualThicknessMm: number | null
   materialId: string
+  sourceModuleIds: string[]
   representativeInstanceId: string
   instanceIds: string[]
   quantity: number
@@ -89,6 +90,7 @@ export function buildManufacturingCutlist(packageValue: ManufacturingPackageV1):
     const existing = panelGroupsByPartId.get(part.partId)
     if (existing) {
       existing.instanceIds.push(part.instanceId)
+      existing.sourceModuleIds.push(...part.sourceModuleIds)
       existing.quantity += 1
       continue
     }
@@ -104,6 +106,7 @@ export function buildManufacturingCutlist(packageValue: ManufacturingPackageV1):
       nominalThicknessMm: part.dimensions.nominalThicknessMm,
       actualThicknessMm: part.dimensions.actualThicknessMm,
       materialId: part.materialId,
+      sourceModuleIds: [...part.sourceModuleIds],
       representativeInstanceId: part.instanceId,
       instanceIds: [part.instanceId],
       quantity: 1,
@@ -111,7 +114,11 @@ export function buildManufacturingCutlist(packageValue: ManufacturingPackageV1):
   }
 
   const sortedPanelGroups = [...panelGroupsByPartId.values()]
-    .map(group => ({ ...group, instanceIds: [...group.instanceIds].sort(compareOrdinal) }))
+    .map(group => ({
+      ...group,
+      instanceIds: [...group.instanceIds].sort(compareOrdinal),
+      sourceModuleIds: [...new Set(group.sourceModuleIds)].sort(compareOrdinal),
+    }))
     .sort((a, b) =>
       compareOrdinal(a.roleCode, b.roleCode)
       || b.widthMm - a.widthMm

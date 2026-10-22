@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import type * as Y from 'yjs'
-import { compileAssembly } from '~~/shared/domain/assembly'
 import { buildManufacturingCutlist } from '~~/shared/domain/manufacturing-cutlist'
-import { createManufacturingPackage } from '~~/shared/domain/manufacturing-package'
+import {
+  createManufacturingPackage,
+  type ManufacturingOperationV1,
+  type ManufacturingPartV1,
+} from '~~/shared/domain/manufacturing-package'
 import type { CompiledPanel, FurnitureDoc, PanelOperation, PublicStyle } from '~~/shared/domain/types'
 import { panelRoleText, uiText as t } from '~~/shared/i18n/ui-copy'
 import { readFurnitureDoc } from '~~/shared/yjs/doc'
@@ -55,7 +58,6 @@ if (getCurrentScope()) {
   })
 }
 
-const compiled = computed(() => snapshot.value ? compileAssembly(snapshot.value) : { panels: [], operations: [], issues: [] })
 const manufacturingPackage = computed(() => snapshot.value
   ? createManufacturingPackage({ furniture: snapshot.value, publicStyle: props.publicStyle })
   : null)
@@ -67,33 +69,87 @@ interface PanelGroup {
   representative: CompiledPanel
   operations: PanelOperation[]
   quantity: number
-  width: number
-  height: number
-  thickness: number
+  widthMm: number
+  heightMm: number
+  nominalThicknessMm: number
+}
+
+function operationForDrawing(operation: ManufacturingOperationV1): PanelOperation {
+  const center = operation.centerMm
+    ? { x: operation.centerMm.x / 1000, y: operation.centerMm.y / 1000 }
+    : undefined
+  const common = {
+    id: operation.id,
+    operationType: operation.type,
+    targetPanelKey: operation.targetInstanceId,
+    face: operation.face ?? undefined,
+    center,
+    depth: operation.depthMm == null ? undefined : operation.depthMm / 1000,
+    sourceModuleId: operation.sourceModuleId ?? undefined,
+  }
+  if (operation.type === 'through-hole') {
+    return {
+      ...common,
+      cx: center?.x,
+      cy: center?.y,
+      diameter: operation.diameterMm == null ? undefined : operation.diameterMm / 1000,
+      through: operation.through ?? undefined,
+    }
+  }
+  return {
+    ...common,
+    x: center?.x,
+    y: center?.y,
+    width: operation.widthMm == null ? undefined : operation.widthMm / 1000,
+    height: operation.heightMm == null ? undefined : operation.heightMm / 1000,
+    length: operation.lengthMm == null ? undefined : operation.lengthMm / 1000,
+    rotation: operation.rotationDeg == null ? undefined : operation.rotationDeg * Math.PI / 180,
+  }
+}
+
+function panelForDrawing(part: ManufacturingPartV1): CompiledPanel {
+  const operations = part.operations.map(operationForDrawing)
+  return {
+    key: part.instanceId,
+    role: part.role,
+    width: part.dimensions.widthMm / 1000,
+    height: part.dimensions.heightMm / 1000,
+    thickness: part.dimensions.nominalThicknessMm / 1000,
+    position: [
+      part.assemblyPlacement.positionMm.x / 1000,
+      part.assemblyPlacement.positionMm.y / 1000,
+      part.assemblyPlacement.positionMm.z / 1000,
+    ],
+    rotation: [
+      part.assemblyPlacement.rotationDeg.x * Math.PI / 180,
+      part.assemblyPlacement.rotationDeg.y * Math.PI / 180,
+      part.assemblyPlacement.rotationDeg.z * Math.PI / 180,
+    ],
+    operations,
+    ...(part.orientation ? { orientation: part.orientation } : {}),
+    ...(part.sourceModuleIds[0] ? { sourceModuleId: part.sourceModuleIds[0] } : {}),
+    ...(part.doorHinge ? { doorHinge: part.doorHinge } : {}),
+    touchedModuleIds: [...part.sourceModuleIds],
+  }
 }
 
 const panelGroups = computed<PanelGroup[]>(() => {
-  if (!cutlist.value) return []
-  const panelsByInstanceId = new Map(compiled.value.panels.map(panel => [panel.key, panel]))
-  const operationsByInstanceId = new Map<string, PanelOperation[]>()
-  for (const operation of compiled.value.operations) {
-    const operations = operationsByInstanceId.get(operation.targetPanelKey) ?? []
-    operations.push(operation)
-    operationsByInstanceId.set(operation.targetPanelKey, operations)
-  }
+  if (!cutlist.value || !manufacturingPackage.value) return []
+  const partsByInstanceId = new Map(manufacturingPackage.value.parts.map(part => [part.instanceId, part]))
 
   return cutlist.value.panelGroups.flatMap((group) => {
-    const representative = panelsByInstanceId.get(group.representativeInstanceId)
-    if (!representative) return []
+    const representativePart = partsByInstanceId.get(group.representativeInstanceId)
+    if (!representativePart) return []
+    const representative = panelForDrawing(representativePart)
     return [{
       key: group.key,
       groupId: group.groupId,
       representative,
-      operations: operationsByInstanceId.get(group.representativeInstanceId) ?? [],
+      operations: representative.operations,
       quantity: group.quantity,
-      width: group.widthMm / 1000,
-      height: group.heightMm / 1000,
-      thickness: group.nominalThicknessMm / 1000,
+      widthMm: group.widthMm,
+      heightMm: group.heightMm,
+      nominalThicknessMm: group.nominalThicknessMm,
     }]
   })
 })
@@ -127,6 +183,10 @@ function selectPanel(group: PanelGroup) {
   emit('update:selectedDrawingKey', isSelectedGroup(group) ? null : group.key)
 }
 
+function clearSelection() {
+  emit('update:selectedDrawingKey', null)
+}
+
 function onPanelCardClick(group: PanelGroup) {
   if (isShowingSelectedPanel.value) return
   selectPanel(group)
@@ -141,8 +201,8 @@ function stopSelectedCanvasClick(group: PanelGroup, event: MouseEvent) {
   if (isSelectedGroup(group)) event.stopPropagation()
 }
 
-function formatCentimeters(value: number): string {
-  return (Math.round(value * 1000) / 10).toFixed(1).replace(/\.0$/, '')
+function formatMillimetres(value: number): string {
+  return String(Math.round(value * 1000) / 1000)
 }
 </script>
 
@@ -157,8 +217,20 @@ function formatCentimeters(value: number): string {
     >
       {{ t('noPanelsYet') }}
     </div>
+    <button
+      v-else-if="isShowingSelectedPanel"
+      type="button"
+      class="mb-2 inline-flex w-fit shrink-0 items-center gap-1.5 text-xs font-medium text-muted hover:text-highlighted"
+      @click="clearSelection"
+    >
+      <UIcon
+        name="i-lucide-grid-2x2"
+        class="size-4"
+      />
+      {{ t('showAllPanels') }}
+    </button>
     <div
-      v-else
+      v-if="panelGroups.length > 0"
       class="gap-3"
       :class="isShowingSelectedPanel ? 'mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col' : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'"
     >
@@ -208,7 +280,7 @@ function formatCentimeters(value: number): string {
                 {{ panelRoleText(group.representative.role) }}
               </div>
               <div class="truncate text-xs tabular-nums text-muted">
-                {{ formatCentimeters(group.width) }} × {{ formatCentimeters(group.height) }} × {{ formatCentimeters(group.thickness) }} cm
+                {{ formatMillimetres(group.widthMm) }} × {{ formatMillimetres(group.heightMm) }} × {{ formatMillimetres(group.nominalThicknessMm) }} mm
               </div>
             </div>
           </div>
