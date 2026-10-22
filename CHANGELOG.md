@@ -7,10 +7,12 @@ All notable product changes will be recorded here. Tenon/Morti follows semantic 
 ### Added
 
 - Added `.morti` ProjectBundle v2 with explicit metric units, project name, and normalized product style while retaining v1 and legacy raw Yjs import compatibility.
+- Added deterministic `ManufacturingPackageV1` JSON with individual panel identities, millimetre dimensions, complete preliminary operations, material/edge/hardware placeholders, traceability, structured issues, and explicit manufacturability status.
 
 ### Changed
 
 - Project import, export, duplicate, public remix, and cloud restore now preserve the product's materials, handle style, and render appearance together with its parametric geometry.
+- Separated Three.js/CSG panel geometry from the pure assembly compiler so manufacturing-domain code does not depend on the renderer.
 
 ### Security
 

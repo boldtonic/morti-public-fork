@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import * as THREE from 'three'
 import { onBeforeUnmount, shallowRef, watch } from 'vue'
-import { compilePartGeometry } from '~~/shared/domain/assembly'
+import { compilePartGeometry } from '~~/shared/three/assembly-geometry'
 import {
   addOutlineExcludeAttribute,
   bakeSurfaceIdsForGeometry,

@@ -140,7 +140,7 @@ Near-term order:
 
 1. Preserve the post-0.1 trust boundary: inert validated snapshots and owner-scoped local projects. Completed 2026-10-21.
 2. Define and migrate to `ProjectBundleV2` so geometry, style, hardware state, import/export, duplicate, publish, remix, and cloud round-trip as one product. Completed 2026-10-22.
-3. Define deterministic `ManufacturingPackageV1` before adding CSV, XLSX, DXF, or CNC-specific adapters.
+3. Define deterministic `ManufacturingPackageV1` before adding CSV, XLSX, DXF, or CNC-specific adapters. Completed as a preliminary contract on 2026-10-22.
 4. Add compiler/cutlist golden projects and a single visible validation pipeline.
 5. Select a real manufacturer, construction system, material specification, and exact hardware families before generating joinery or hinge/runner machining.
 6. Resume product realism with simple feet after the project/manufacturing contracts are stable; wheels remain a later optional product choice.
@@ -164,7 +164,10 @@ Product reasoning:
 - The existing local project was opened successfully after migration in the in-app browser, and no browser warnings or errors were recorded.
 - `.morti` format v2 now contains `ProjectBundleV2`: an explicit metric unit system, project name, normalized public style/material/handle appearance, and the validated Yjs parametric document. V1 envelopes and legacy raw Yjs files migrate to deterministic defaults; future bundle versions and unsupported units fail without creating a local project.
 - Import, export, duplicate, public remix, and cloud restore now preserve geometry and appearance. Duplicates keep editor preferences but clear module selection; automatic reconciliation preserves an existing local style, while a missing local state or an explicit cloud download restores cloud style without replacing unrelated editor preferences.
-- Next implementation block: deterministic `ManufacturingPackageV1`, followed by golden compiler projects. Corte remains preliminary until those contracts and a real manufacturer validation are in place.
+- `ManufacturingPackageV1` now provides canonical, byte-stable JSON in millimetres. It preserves every compiled panel and operation, separates snapshot-local instance identity from fabrication-equivalent part identity, declares face-local coordinates, and carries material, face, edge, hardware, traceability, issue, and manufacturability data.
+- The contract deliberately does not invent workshop facts: actual board thickness is null; manufacturing grain and all edge treatments are unspecified; handle selections are visual-only with no SKU or drilling pattern; current operations are unvalidated. Missing operation coordinates or faces block the package.
+- Pure assembly compilation no longer imports Three.js or CSG; visual panel geometry is isolated under `shared/three/assembly-geometry.ts`.
+- Next implementation block: golden compiler/manufacturing projects and a single visible validation pipeline. Corte remains preliminary until those checks and a real manufacturer validation are in place.
 
 ## Collaboration Notes
 

@@ -203,6 +203,12 @@ Los exportadores futuros consumiran este paquete, no componentes de interfaz.
 - Todo panel compilado tiene identidad estable y trazabilidad hasta su modulo.
 - Ninguna operacion pierde coordenadas, profundidad, rotacion o cara al pasar al paquete.
 
+**Estado 2026-10-22**
+
+Implementado como contrato preliminar e inmutable. El paquete conserva cada panel y operacion, usa JSON canonico y milimetros, declara coordenadas de cara, separa identidad de pieza e instancia, y transporta materiales, caras, cantos, herrajes e incidencias sin fingir referencias industriales inexistentes. Espesor real, veta industrial, canteado, SKU y patrones de herraje permanecen explicitamente sin resolver. Los taladros actuales se marcan no validados y un dato de operacion sin centro o cara bloquea el paquete. La especificacion vive en `docs/manufacturing-package-v1.md`.
+
+Pendiente para completar la evidencia de aceptacion: proyectos golden compartidos entre Node, navegador y CI, y validacion fisica con un fabricante.
+
 ### 5. P0 - Unificar visual y mecanizado de tiradores mediante patrones de herraje
 
 **Hallazgo**

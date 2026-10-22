@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
-import { compilePartGeometry } from '~~/shared/domain/assembly'
+import { compilePartGeometry } from '~~/shared/three/assembly-geometry'
 import { useThemeColors } from '~~/composables/useThemeColors'
 import { useThreejsCanvas } from '~~/composables/useThreejsCanvas'
 import {
