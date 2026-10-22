@@ -558,7 +558,10 @@ function downloadCorruptProjectData() {
 
 async function exportProject() {
   if (!project.value || !docRef.value || !import.meta.client) return
-  const blob = exportDoc(docRef.value as Parameters<typeof exportDoc>[0])
+  const blob = exportDoc(docRef.value as Parameters<typeof exportDoc>[0], {
+    projectName: project.value.name,
+    publicStyle: publicStyle.value,
+  })
   downloadBlob(blob, `${safeFileName()}.morti`)
 }
 

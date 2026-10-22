@@ -243,6 +243,16 @@ export function normalizePublicStyle(input?: PublicStyleInput | null): PublicSty
   }
 }
 
+export function parsePublicStyleJson(raw: unknown): PublicStyle {
+  if (typeof raw !== 'string' || raw.length === 0) return normalizePublicStyle()
+  try {
+    return normalizePublicStyle(JSON.parse(raw) as PublicStyleInput)
+  }
+  catch {
+    return normalizePublicStyle()
+  }
+}
+
 export function cryptoRandomId(): string {
   // 22-char URL-safe id (~128 bits)
   const buf = new Uint8Array(16)

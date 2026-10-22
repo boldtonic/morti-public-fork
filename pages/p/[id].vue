@@ -48,7 +48,11 @@ async function doRemix(cloudIdArg?: string) {
   try {
     const { useLocalProjects } = await import('~/composables/useLocalProjects')
     const { importDocAsCopy } = useLocalProjects()
-    const newRow = await importDocAsCopy(data.value.doc, `${data.value.record.name} (remix)`)
+    const newRow = await importDocAsCopy(
+      data.value.doc,
+      `${data.value.record.name} (remix)`,
+      data.value.publicStyle,
+    )
     try {
       await $fetch(`/api/public/projects/${encodeURIComponent(cloudId)}/remix`, { method: 'POST' })
     }

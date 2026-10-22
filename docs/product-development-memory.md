@@ -1,6 +1,6 @@
 # Product Development Memory
 
-Last updated: 2026-10-21
+Last updated: 2026-10-22
 
 ## Purpose
 
@@ -138,8 +138,8 @@ Current status of open modules and interior shelves:
 
 Near-term order:
 
-1. Preserve the post-0.1 trust boundary: inert validated snapshots and owner-scoped local projects.
-2. Define and migrate to `ProjectBundleV2` so geometry, style, hardware state, import/export, duplicate, publish, remix, and cloud round-trip as one product.
+1. Preserve the post-0.1 trust boundary: inert validated snapshots and owner-scoped local projects. Completed 2026-10-21.
+2. Define and migrate to `ProjectBundleV2` so geometry, style, hardware state, import/export, duplicate, publish, remix, and cloud round-trip as one product. Completed 2026-10-22.
 3. Define deterministic `ManufacturingPackageV1` before adding CSV, XLSX, DXF, or CNC-specific adapters.
 4. Add compiler/cutlist golden projects and a single visible validation pipeline.
 5. Select a real manufacturer, construction system, material specification, and exact hardware families before generating joinery or hinge/runner machining.
@@ -159,10 +159,12 @@ Product reasoning:
 - It corrected two stale assumptions from the supplied external guide: v0.1 already had 54 tests, and compiled operations already carried local coordinates even though Corte did not preserve or display all of them.
 - Public and private snapshot downloads are now always inert `application/octet-stream` attachments with a restrictive response CSP. Upload and publish reject data that is not a valid Yjs update and ignore client-provided MIME types and filenames.
 - Local projects now carry an `ownerId`. Legacy rows are claimed once by the first confirmed authenticated identity that lists or opens them; subsequent accounts cannot list, open, export, delete, read snapshots from, or autosync those projects.
-- Cloud reconciliation refuses to overwrite a local row owned by another account when legacy cloud records collide on the same client project id. `ProjectBundleV2` must separate portable identity from local/cloud storage identity to resolve that historical collision fully.
+- Cloud reconciliation refuses to overwrite a local row owned by another account when legacy cloud records collide on the same client project id. A later cloud identity migration must resolve that historical collision explicitly; the portable bundle deliberately creates a fresh local storage identity on import/remix.
 - Local auth bypass now ignores forwarded host headers, rejects `0.0.0.0`, and requires a raw loopback host. When Nitro exposes a socket address it must also be loopback; the supported dev command remains bound to `127.0.0.1`.
 - The existing local project was opened successfully after migration in the in-app browser, and no browser warnings or errors were recorded.
-- Next implementation block: `ProjectBundleV2`, then `ManufacturingPackageV1` and golden compiler projects. Corte remains preliminary until those contracts are in place.
+- `.morti` format v2 now contains `ProjectBundleV2`: an explicit metric unit system, project name, normalized public style/material/handle appearance, and the validated Yjs parametric document. V1 envelopes and legacy raw Yjs files migrate to deterministic defaults; future bundle versions and unsupported units fail without creating a local project.
+- Import, export, duplicate, public remix, and cloud restore now preserve geometry and appearance. Duplicates keep editor preferences but clear module selection; automatic reconciliation preserves an existing local style, while a missing local state or an explicit cloud download restores cloud style without replacing unrelated editor preferences.
+- Next implementation block: deterministic `ManufacturingPackageV1`, followed by golden compiler projects. Corte remains preliminary until those contracts and a real manufacturer validation are in place.
 
 ## Collaboration Notes
 

@@ -1,24 +1,11 @@
 import * as Y from 'yjs'
 import type { CloudProjectRecord, PublicStyle } from '~~/shared/domain/types'
-import { normalizePublicStyle } from '~~/shared/domain/defaults'
+import { parsePublicStyleJson } from '~~/shared/domain/defaults'
 
 export interface LoadPublicProjectResult {
   record: CloudProjectRecord
   doc: Y.Doc
   publicStyle: PublicStyle
-}
-
-function parsePublicStyle(raw: string | undefined | null): PublicStyle {
-  if (!raw || typeof raw !== 'string' || raw.length === 0) {
-    return normalizePublicStyle()
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<PublicStyle>
-    return normalizePublicStyle(parsed)
-  }
-  catch {
-    return normalizePublicStyle()
-  }
 }
 
 export async function loadPublicProject(cloudId: string): Promise<LoadPublicProjectResult> {
@@ -62,7 +49,7 @@ export async function loadPublicProject(cloudId: string): Promise<LoadPublicProj
   const doc = new Y.Doc()
   Y.applyUpdate(doc, bytes)
 
-  const publicStyle = parsePublicStyle(record.public_style)
+  const publicStyle = parsePublicStyleJson(record.public_style)
 
   return { record, doc, publicStyle }
 }

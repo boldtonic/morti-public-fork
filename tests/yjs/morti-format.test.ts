@@ -2,12 +2,19 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
 import { DESIGN_SCHEMA_VERSION } from '~~/shared/domain/types'
+import { normalizePublicStyle } from '~~/shared/domain/defaults'
+import {
+  createProjectBundle,
+  PROJECT_BUNDLE_VERSION,
+  type ProjectBundleV2,
+} from '~~/shared/domain/project-bundle'
 import { ensureInitialized, insertColumn, readFurnitureDoc } from '~~/shared/yjs/doc'
 import {
   MORTI_FORMAT_VERSION,
   MortiImportError,
   exportDoc,
   importDocFromBlob,
+  importProjectBundleFromBlob,
   type MortiEnvelope,
 } from '~~/shared/yjs/morti-format'
 
@@ -39,6 +46,7 @@ function envelope(overrides: Partial<MortiEnvelope> = {}): MortiEnvelope {
     technicalRendererVersion: 1,
     exportedAt: new Date(0).toISOString(),
     yjsUpdateBase64: bytesToBase64(makeUpdate()),
+    projectBundle: createProjectBundle(),
     ...overrides,
   }
 }
@@ -73,14 +81,46 @@ describe('.morti import format', () => {
     imported.destroy()
   })
 
+  it('round-trips project name and product style in the v2 bundle', async () => {
+    const source = new Y.Doc()
+    ensureInitialized(source)
+    const publicStyle = normalizePublicStyle({
+      renderStyle: 'technical',
+      rendered: {
+        handles: { type: 'square-bar', finish: 'brass' },
+      },
+    } as Parameters<typeof normalizePublicStyle>[0])
+
+    const imported = await importProjectBundleFromBlob(exportDoc(source, {
+      projectName: 'Console oak',
+      publicStyle,
+    }))
+
+    expect(imported.project.projectName).toBe('Console oak')
+    expect(imported.project.publicStyle).toEqual(publicStyle)
+    imported.doc.destroy()
+    source.destroy()
+  })
+
   it('accepts previous envelope and design schema versions', async () => {
     const imported = await importDocFromBlob(envelopeBlob({
       formatVersion: Math.max(0, MORTI_FORMAT_VERSION - 1),
       designSchemaVersion: Math.max(0, DESIGN_SCHEMA_VERSION - 1),
+      projectBundle: undefined,
     }))
 
     expect(readFurnitureDoc(imported).schemaVersion).toBe(DESIGN_SCHEMA_VERSION)
     imported.destroy()
+  })
+
+  it('migrates v1 envelopes to a default v2 project bundle', async () => {
+    const imported = await importProjectBundleFromBlob(envelopeBlob({
+      formatVersion: 1,
+      projectBundle: undefined,
+    }))
+
+    expect(imported.project).toEqual(createProjectBundle())
+    imported.doc.destroy()
   })
 
   it('accepts the legacy raw Yjs update format', async () => {
@@ -104,6 +144,25 @@ describe('.morti import format', () => {
       'UNSUPPORTED_DESIGN_SCHEMA_VERSION',
     )
     expect(error.message).toContain('design schema version')
+  })
+
+  it('rejects a future project bundle version explicitly', async () => {
+    const futureBundle = {
+      ...createProjectBundle(),
+      bundleVersion: PROJECT_BUNDLE_VERSION + 1,
+    } as unknown as ProjectBundleV2
+    const error = await expectImportError(
+      envelopeBlob({ projectBundle: futureBundle }),
+      'UNSUPPORTED_PROJECT_BUNDLE_VERSION',
+    )
+    expect(error.message).toContain('project bundle version')
+  })
+
+  it('requires the v2 project bundle in current envelopes', async () => {
+    await expectImportError(
+      envelopeBlob({ projectBundle: undefined }),
+      'INVALID_ENVELOPE',
+    )
   })
 
   it('rejects a future schema embedded in the Yjs update', async () => {

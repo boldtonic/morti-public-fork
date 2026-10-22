@@ -4,6 +4,18 @@ All notable product changes will be recorded here. Tenon/Morti follows semantic 
 
 ## [Unreleased]
 
+### Added
+
+- Added `.morti` ProjectBundle v2 with explicit metric units, project name, and normalized product style while retaining v1 and legacy raw Yjs import compatibility.
+
+### Changed
+
+- Project import, export, duplicate, public remix, and cloud restore now preserve the product's materials, handle style, and render appearance together with its parametric geometry.
+
+### Security
+
+- Validated project snapshots as inert Yjs data and isolated local projects by authenticated owner identity.
+
 ## [0.1.0] - 2026-10-21
 
 ### Added

@@ -1,4 +1,5 @@
 import type { CloudProjectRecord, LocalProjectRow, ProjectVisibility, PublicStyle } from '~~/shared/domain/types'
+import { parsePublicStyleJson } from '~~/shared/domain/defaults'
 import { STORES, idbPut } from '~~/shared/idb/morti-db'
 
 interface EnsureCloudProjectOpts {
@@ -101,8 +102,8 @@ export function useCloudProjects() {
       const existing = await local.getLocalProject(projectId)
       // Legacy versions allowed one browser project to be synced by multiple
       // accounts. Never overwrite another owner's local row when those old
-      // cloud records share a client project id. ProjectBundleV2 will give the
-      // cloud copy its own portable identity.
+      // cloud records share a client project id. A later cloud identity
+      // migration must resolve those historical collisions explicitly.
       if (!existing && await local.hasStoredLocalProjectId(projectId)) continue
       const row: LocalProjectRow = {
         id: projectId,
@@ -115,6 +116,9 @@ export function useCloudProjects() {
         pinned: existing?.pinned ?? false,
       }
       await idbPut<LocalProjectRow>(STORES.projects, row)
+      if (!existing || !await local.hasLocalProjectEditorState(projectId)) {
+        await local.setLocalProjectPublicStyle(projectId, parsePublicStyleJson(record.public_style))
+      }
 
       const remote = await fetchSnapshotBytes(record)
       if (remote && remote.byteLength > 0) {
@@ -215,7 +219,9 @@ export function useCloudProjects() {
     const record = await $fetch<CloudProjectRecord>(`/api/projects/${encodeURIComponent(recordId)}`)
     const bytes = await fetchSnapshotBytes(record)
     if (!bytes || bytes.byteLength === 0) throw new Error('No cloud snapshot for this project.')
-    await useLocalProjects().putDesignSnapshot(localProjectId, bytes)
+    const local = useLocalProjects()
+    await local.putDesignSnapshot(localProjectId, bytes)
+    await local.setLocalProjectPublicStyle(localProjectId, parsePublicStyleJson(record.public_style))
   }
 
   async function setCloudProjectName(recordId: string, name: string): Promise<CloudProjectRecord> {

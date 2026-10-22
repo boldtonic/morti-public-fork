@@ -181,7 +181,12 @@ function triggerImport() {
 function importFailureMessage(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code
   if (code === 'FILE_TOO_LARGE') return t('importFileTooLarge')
-  if (code === 'UNSUPPORTED_FORMAT_VERSION' || code === 'UNSUPPORTED_DESIGN_SCHEMA_VERSION') {
+  if (
+    code === 'UNSUPPORTED_FORMAT_VERSION'
+    || code === 'UNSUPPORTED_DESIGN_SCHEMA_VERSION'
+    || code === 'UNSUPPORTED_PROJECT_BUNDLE_VERSION'
+    || code === 'UNSUPPORTED_UNIT_SYSTEM'
+  ) {
     return t('importNewerVersion')
   }
   if (

@@ -1,6 +1,7 @@
 import type * as Y from 'yjs'
-import type { LocalProjectRow } from '~~/shared/domain/types'
-import { cryptoRandomId } from '~~/shared/domain/defaults'
+import type { LocalProjectRow, ProjectEditorStateRow, PublicStyle } from '~~/shared/domain/types'
+import { cryptoRandomId, normalizePublicStyle } from '~~/shared/domain/defaults'
+import { createDefaultProjectEditorState } from '~~/shared/domain/editor-state'
 import { scopeLocalProjectToOwner } from '~~/shared/domain/local-project-ownership'
 import {
   STORES,
@@ -109,6 +110,11 @@ export function useLocalProjects() {
     return !!await idbGet<LocalProjectRow>(STORES.projects, id)
   }
 
+  async function hasLocalProjectEditorState(id: string): Promise<boolean> {
+    if (!await getLocalProject(id)) return false
+    return !!await idbGet<ProjectEditorStateRow>(STORES.projectEditorState, id)
+  }
+
   async function createLocalProject(name: string): Promise<LocalProjectRow> {
     const row = makeRow(name, await requireOwnerId())
     await idbPut<LocalProjectRow>(STORES.projects, row)
@@ -149,6 +155,19 @@ export function useLocalProjects() {
     await listLocalProjects()
   }
 
+  async function setLocalProjectPublicStyle(id: string, publicStyle: PublicStyle | null | undefined): Promise<void> {
+    if (!await getLocalProject(id)) throw new Error('Local project is not available for this account.')
+    const current = await idbGet<ProjectEditorStateRow>(STORES.projectEditorState, id)
+    const editorState: ProjectEditorStateRow = {
+      ...createDefaultProjectEditorState(id),
+      ...current,
+      id,
+      projectId: id,
+      publicStyle: normalizePublicStyle(publicStyle),
+    }
+    await idbPut<ProjectEditorStateRow>(STORES.projectEditorState, editorState)
+  }
+
   async function deleteLocalProject(id: string): Promise<void> {
     if (!await getLocalProject(id)) return
     await idbDelete(STORES.projects, id)
@@ -171,27 +190,43 @@ export function useLocalProjects() {
     else {
       await writeFreshDesignState(row.id)
     }
+    const sourceEditorState = await idbGet<ProjectEditorStateRow>(STORES.projectEditorState, id)
+    const editorState = sourceEditorState
+      ? {
+          ...structuredClone(sourceEditorState),
+          id: row.id,
+          projectId: row.id,
+          selectedModuleIds: [],
+          publicStyle: normalizePublicStyle(sourceEditorState.publicStyle),
+        }
+      : createDefaultProjectEditorState(row.id)
+    await idbPut<ProjectEditorStateRow>(STORES.projectEditorState, editorState)
     await listLocalProjects()
     return row
   }
 
   async function importMortiFile(blob: Blob, name: string): Promise<LocalProjectRow> {
-    const [Yjs, { importDocFromBlob }] = await Promise.all([
+    const [Yjs, { importProjectBundleFromBlob }] = await Promise.all([
       import('yjs'),
       import('~~/shared/yjs/morti-format'),
     ])
-    const doc = await importDocFromBlob(blob)
+    const imported = await importProjectBundleFromBlob(blob)
+    const doc = imported.doc
     const update = Yjs.encodeStateAsUpdate(doc)
-    const row = makeRow(name, await requireOwnerId())
+    doc.destroy()
+    const row = makeRow(imported.project.projectName ?? name, await requireOwnerId())
     await idbPut<LocalProjectRow>(STORES.projects, row)
     await idbPut<DesignStateRow>(STORES.designState, { projectId: row.id, update, snapshot: update, updatedAt: nowIso() })
+    const editorState = createDefaultProjectEditorState(row.id)
+    editorState.publicStyle = normalizePublicStyle(imported.project.publicStyle)
+    await idbPut<ProjectEditorStateRow>(STORES.projectEditorState, editorState)
     await listLocalProjects()
     return row
   }
 
   // Used by `/p/:id` Remix flow: encode an in-memory Y.Doc as a brand-new
   // local project (no envelope round-trip). Returns the new local row.
-  async function importDocAsCopy(doc: Y.Doc, name: string): Promise<LocalProjectRow> {
+  async function importDocAsCopy(doc: Y.Doc, name: string, publicStyle?: PublicStyle | null): Promise<LocalProjectRow> {
     const [Yjs, { ensureInitialized }] = await Promise.all([
       import('yjs'),
       import('~~/shared/yjs/doc'),
@@ -201,13 +236,18 @@ export function useLocalProjects() {
     const row = makeRow(name, await requireOwnerId())
     await idbPut<LocalProjectRow>(STORES.projects, row)
     await idbPut<DesignStateRow>(STORES.designState, { projectId: row.id, update, snapshot: update, updatedAt: nowIso() })
+    const editorState = createDefaultProjectEditorState(row.id)
+    editorState.publicStyle = normalizePublicStyle(publicStyle)
+    await idbPut<ProjectEditorStateRow>(STORES.projectEditorState, editorState)
     await listLocalProjects()
     return row
   }
 
   async function exportMortiFile(id: string): Promise<Blob | null> {
-    if (!await getLocalProject(id)) return null
+    const project = await getLocalProject(id)
+    if (!project) return null
     const state = await idbGet<DesignStateRow>(STORES.designState, id)
+    const editorState = await idbGet<ProjectEditorStateRow>(STORES.projectEditorState, id)
     const bytes = stateBytes(state)
     if (!bytes) return null
     const [Yjs, { ensureInitialized }, { exportDoc }] = await Promise.all([
@@ -216,9 +256,17 @@ export function useLocalProjects() {
       import('~~/shared/yjs/morti-format'),
     ])
     const doc = new Yjs.Doc()
-    Yjs.applyUpdate(doc, bytes)
-    ensureInitialized(doc)
-    return exportDoc(doc)
+    try {
+      Yjs.applyUpdate(doc, bytes)
+      ensureInitialized(doc)
+      return exportDoc(doc, {
+        projectName: project.name,
+        publicStyle: normalizePublicStyle(editorState?.publicStyle),
+      })
+    }
+    finally {
+      doc.destroy()
+    }
   }
 
   async function getDesignSnapshot(id: string): Promise<Uint8Array | null> {
@@ -240,10 +288,12 @@ export function useLocalProjects() {
     listLocalProjects,
     getLocalProject,
     hasStoredLocalProjectId,
+    hasLocalProjectEditorState,
     createLocalProject,
     updateLocalProject,
     renameLocalProject,
     setLocalProjectCloudId,
+    setLocalProjectPublicStyle,
     deleteLocalProject,
     duplicateLocalProject,
     importMortiFile,
